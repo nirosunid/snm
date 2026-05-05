@@ -71,6 +71,7 @@ export interface Config {
     media: Media;
     brands: Brand;
     'voice-samples': VoiceSample;
+    assets: Asset;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -82,6 +83,7 @@ export interface Config {
     media: MediaSelect<false> | MediaSelect<true>;
     brands: BrandsSelect<false> | BrandsSelect<true>;
     'voice-samples': VoiceSamplesSelect<false> | VoiceSamplesSelect<true>;
+    assets: AssetsSelect<false> | AssetsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -259,6 +261,38 @@ export interface VoiceSample {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assets".
+ */
+export interface Asset {
+  id: number;
+  brand: number | Brand;
+  /**
+   * Stamped automatically from the authenticated user.
+   */
+  owner: number | User;
+  /**
+   * Display name (defaults to the original filename on upload).
+   */
+  name: string;
+  file: number | Media;
+  /**
+   * Searchable terms — what's in the photo, mood, product, etc.
+   */
+  tags?:
+    | {
+        value: string;
+        id?: string | null;
+      }[]
+    | null;
+  /**
+   * Optional caption / context the AI can read when picking this asset.
+   */
+  description?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
@@ -296,6 +330,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'voice-samples';
         value: number | VoiceSample;
+      } | null)
+    | ({
+        relationTo: 'assets';
+        value: number | Asset;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -433,6 +471,25 @@ export interface VoiceSamplesSelect<T extends boolean = true> {
   source?: T;
   model?: T;
   embedding?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "assets_select".
+ */
+export interface AssetsSelect<T extends boolean = true> {
+  brand?: T;
+  owner?: T;
+  name?: T;
+  file?: T;
+  tags?:
+    | T
+    | {
+        value?: T;
+        id?: T;
+      };
+  description?: T;
   updatedAt?: T;
   createdAt?: T;
 }

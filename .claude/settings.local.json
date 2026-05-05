@@ -5,7 +5,8 @@
       "Bash(./scripts/dev.sh generate-types *)",
       "Bash(./scripts/dev.sh logs *)",
       "Bash(./scripts/dev.sh restart *)",
-      "Bash(curl -sS -o /dev/null -w 'web up: %{http_code}\\\\n' http://localhost:3000/api/users)"
+      "Bash(curl -sS -o /dev/null -w 'web up: %{http_code}\\\\n' http://localhost:3000/api/users)",
+      "Bash(./scripts/dev.sh migrate *)"
     ]
   }
 }

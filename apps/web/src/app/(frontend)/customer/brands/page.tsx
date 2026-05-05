@@ -30,20 +30,32 @@ export default async function BrandsListPage() {
     limit: 50,
   });
 
-  // Single aggregate to avoid N+1 for sample counts on the cards.
+  // Single aggregates to avoid N+1 for sample/asset counts on the cards.
   const brandIds = brands.map((b) => b.id);
   const sampleCounts = new Map<number, number>();
+  const assetCounts = new Map<number, number>();
   if (brandIds.length > 0) {
-    const result = await payload.db.drizzle.execute(sql`
+    const samplesRes = await payload.db.drizzle.execute(sql`
       SELECT brand_id, count(*)::int AS n
       FROM voice_samples
       WHERE brand_id IN ${brandIds}
       GROUP BY brand_id
     `);
-    const rows =
-      (result as unknown as { rows?: Array<{ brand_id: number; n: number }> })
+    const sampleRows =
+      (samplesRes as unknown as { rows?: Array<{ brand_id: number; n: number }> })
         .rows ?? [];
-    for (const r of rows) sampleCounts.set(r.brand_id, r.n);
+    for (const r of sampleRows) sampleCounts.set(r.brand_id, r.n);
+
+    const assetsRes = await payload.db.drizzle.execute(sql`
+      SELECT brand_id, count(*)::int AS n
+      FROM assets
+      WHERE brand_id IN ${brandIds}
+      GROUP BY brand_id
+    `);
+    const assetRows =
+      (assetsRes as unknown as { rows?: Array<{ brand_id: number; n: number }> })
+        .rows ?? [];
+    for (const r of assetRows) assetCounts.set(r.brand_id, r.n);
   }
 
   return (
@@ -86,6 +98,7 @@ export default async function BrandsListPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           {brands.map((brand) => {
             const samples = sampleCounts.get(brand.id) ?? 0;
+            const assets = assetCounts.get(brand.id) ?? 0;
             return (
               <Card
                 key={brand.id}
@@ -105,9 +118,14 @@ export default async function BrandsListPage() {
                         </p>
                       ) : null}
                     </div>
-                    <Badge variant="secondary" className="shrink-0">
-                      {samples} sample{samples === 1 ? "" : "s"}
-                    </Badge>
+                    <div className="flex shrink-0 flex-col items-end gap-1">
+                      <Badge variant="secondary">
+                        {samples} sample{samples === 1 ? "" : "s"}
+                      </Badge>
+                      <Badge variant="outline">
+                        {assets} asset{assets === 1 ? "" : "s"}
+                      </Badge>
+                    </div>
                   </div>
                 </Link>
               </Card>

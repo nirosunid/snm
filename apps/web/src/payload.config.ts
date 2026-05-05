@@ -4,6 +4,7 @@ import { buildConfig } from "payload";
 import { postgresAdapter } from "@payloadcms/db-postgres";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
 
+import { Assets } from "./collections/Assets";
 import { Brands } from "./collections/Brands";
 import { Media } from "./collections/Media";
 import { Users } from "./collections/Users";
@@ -20,7 +21,7 @@ export default buildConfig({
     },
   },
   editor: lexicalEditor(),
-  collections: [Users, Media, Brands, VoiceSamples],
+  collections: [Users, Media, Brands, VoiceSamples, Assets],
   secret: process.env.PAYLOAD_SECRET || "",
   typescript: {
     outputFile: path.resolve(dirname, "payload-types.ts"),

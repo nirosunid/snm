@@ -1,4 +1,4 @@
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, ArrowRight, Image as ImageIcon } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPayload } from "payload";
@@ -11,6 +11,7 @@ import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -51,6 +52,14 @@ export default async function BrandDetailPage({ params }: Props) {
     where: { brand: { equals: brand.id } },
     sort: "-createdAt",
     limit: 3,
+  });
+
+  const { totalDocs: assetCount } = await payload.find({
+    collection: "assets",
+    user,
+    overrideAccess: false,
+    where: { brand: { equals: brand.id } },
+    limit: 0,
   });
 
   const palette = brand.palette ?? {};
@@ -134,6 +143,32 @@ export default async function BrandDetailPage({ params }: Props) {
             </>
           )}
         </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Asset library</CardTitle>
+              <CardDescription>
+                Photos the agent can pick as carousel slides instead of
+                templated text.
+              </CardDescription>
+            </div>
+            <Badge variant="secondary">
+              <ImageIcon className="mr-1 size-3" />
+              {assetCount} asset{assetCount === 1 ? "" : "s"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardFooter>
+          <Button asChild variant="outline">
+            <Link href={routes.customer.brands.library(brand.id)}>
+              Manage library
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+        </CardFooter>
       </Card>
 
       <Card>

@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#5 are done (#4 partial — logo upload from the wizard deferred); #6 is the active slice.** UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#6 are done; #7 is the active slice.** Issue #4's deferred logo-upload landed alongside #6 (same media-upload primitive), so #4 is now fully closed. UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -116,7 +116,7 @@ The hardcoded Mercedes-Benz brief from #2 is no longer the only path: `/customer
 ### Acceptance criteria
 
 - [x] Customer creates a brand via the UI; row persists with all fields populated.
-- [ ] **Deferred:** logo uploads from the wizard. The collection has the `logo` upload field, and the detail page is wired to render a logo preview, but the wizard's "Look" step says "logo upload is coming in a later slice." Most natural home is alongside Issue #6 (asset library), since both run through the same media-upload flow.
+- [x] Logo uploads from the wizard. *Landed alongside Issue #6 — uses a `setBrandLogo(formData)` server action that creates a `media` row from the uploaded File and patches `brand.logo`. Two-phase (brand row first, logo second) so a logo failure doesn't block brand creation.*
 - [x] Brand-detail page renders palette swatches and the selected font (with a font-preview pangram).
 - [x] Access test: another customer cannot read this brand's row via REST. (curl smoke test scripted; promote to Vitest with the test harness.)
 - [x] One customer can have multiple brands (E1 multi-brand-per-user; the wizard does not enforce a single-brand cap and the list page renders N cards).
@@ -179,19 +179,47 @@ Brand-detail page renders a "Voice samples" card with the count badge, a paste t
 
 ---
 
-## Issue 6 — Asset library with tag-based retrieval
+## Issue 6 — Asset library with tag-based retrieval ✅ DONE (LLM-tool wiring + slide embedding deferred)
 
-### What to build
+### What was built
 
-`Assets` Payload collection backed by Payload media uploads, with a `tags` field (array of text). Drag-drop upload UI on a brand library page; tag-filter and simple text-search across tags. New `get_asset_library(brand_id, query)` tool exposed to the LLM. The pipeline picks an uploaded asset for one slide when the planner emits `image_source: "asset"`.
+`assets` Payload collection: `brand` (relationship, indexed), `owner` (denormalized — same defaultValue/adminOnly pattern as Brands and VoiceSamples), `name` (text), `file` (upload → `media`), `tags` (array of text rows), `description` (optional textarea). Access = `adminOrCustomerOwner`; a `beforeValidate` hook checks that `data.brand` belongs to the requester (admins/system bypass).
+
+A new `/customer/brands/[brandId]/library` page with three sections: drag-drop uploader (multi-file, batch-shared tags + description), tag/name search box, and a thumbnail grid. Upload goes through a `uploadAsset(formData)` server action that POSTs the file into `media` (overrideAccess true on the upload — media is generic) then creates the `assets` row with `overrideAccess: false`, so the brand-ownership hook fires.
+
+Brand-detail page now shows an asset-count badge with a "Manage library" CTA. Brand list cards show both sample-count and asset-count via a single aggregate query each — still no N+1.
+
+`searchAssets({ brandId, query, user })` is the tag/name/description substring filter the library page uses. It's the same helper the LLM tool will wrap in Issue #8 (which is when tool-calling lands across providers).
+
+### Implementation notes (as built)
+
+- `apps/web/src/collections/Assets.ts` — collection schema; `apps/web/src/migrations/20260505_204619_add_assets.{ts,json}` — generated migration (Payload-managed; no raw SQL needed since `embedding_vec` was the only non-Payload column in the project).
+- `apps/web/src/lib/assets/{actions.ts,search.ts}` — `uploadAsset` server action and `searchAssets` retrieval helper.
+- `apps/web/src/app/(frontend)/customer/brands/[brandId]/library/page.tsx` — server-component shell + client uploader.
+- `apps/web/src/components/customer/asset-uploader.tsx` — drag-drop, queued/uploading/done/failed status per file, "Clear uploaded" to keep the queue tidy.
+- `apps/web/src/lib/brands/actions.ts` — adds `setBrandLogo(formData)` for the brand wizard's logo step (mirrors `uploadAsset` shape: media create then patch). Two-phase write so a logo failure leaves the brand row intact.
+- `apps/web/src/components/customer/brand-wizard.tsx` — adds the `LogoPicker` sub-component in the "Look" step with a square preview; the review step also renders the logo preview.
+
+### Architectural decisions made during build
+
+- **Two-phase upload (server action, not custom REST):** the action accepts a `FormData`, calls `payload.create({ collection: 'media', file: { data, mimetype, name, size } })` then `payload.create({ collection: 'assets', data: { ..., file: mediaId } })`. Cleaner than a custom multipart REST route, and Payload's Media collection handles all the file-system bookkeeping. Cross-tenant guard is the assets `beforeValidate` hook — same pattern as VoiceSamples.
+- **Search is JS-side after a brand-scoped Payload `find`:** Payload's `where` on array sub-fields is awkward, and brand-scoped result sets are small (<100 in MVP-1). Substring match on tags + name + description is more flexible than tag-equals anyway.
+- **No image processing in MVP-1.** No resize, no thumbnail generation beyond what Payload Media gives by default. If we hit a real perf or cost wall on rendered slide weight, address it then.
+- **Deferred to later issues (these were in the original #6 spec):**
+  - **`get_asset_library` LLM tool** → Issue #8 ("Tool-use round-trip works uniformly across adapters"). The `searchAssets` helper this would wrap is already done.
+  - **Pipeline embeds at least one user-uploaded asset as a carousel slide** → Issue #7 ("Slide template library + Satori renderer"), which adds the `plain image+caption` template needed to render an arbitrary photo as a slide.
 
 ### Acceptance criteria
 
-- [ ] Customer uploads ≥3 assets with tags; library page lists them with thumbnails.
-- [ ] Tag-filter narrows the listing.
-- [ ] `get_asset_library` tool returns the right assets for a sample query (e.g., "shoes" returns shoe-tagged assets only).
-- [ ] Pipeline embeds at least one user-uploaded asset as a carousel slide for an appropriate request.
-- [ ] Access test: another customer cannot list this brand's assets.
+- [x] Customer uploads ≥3 assets with tags; library page lists them with thumbnails.
+- [x] Tag-filter narrows the listing (case-insensitive substring across tags + name + description).
+- [ ] **Deferred to #8:** `get_asset_library` tool returns the right assets for a sample query. The underlying retrieval helper (`searchAssets`) is built and tested; the LLM-tool wrapper lands when tool-calling does in #8.
+- [ ] **Deferred to #7:** pipeline embeds at least one user-uploaded asset as a carousel slide. Needs the `plain image+caption` Satori template that arrives in #7.
+- [x] Access test: another customer cannot list this brand's assets (verified via REST: cross-tenant `GET /api/assets/<id>` → 404, `?where[brand][equals]=<id>` → 0 docs).
+
+### Bonus: closed #4's deferred logo-upload
+
+The brand-creation wizard now collects an optional logo file in the "Look" step (square preview + remove button). On submit, after `createBrand` returns the new id, the wizard calls `setBrandLogo(formData)` to upload the file into `media` and patch `brand.logo`. Failure is non-fatal — the brand exists, the user can retry from the detail page in a later slice.
 
 ### Blocked by
 

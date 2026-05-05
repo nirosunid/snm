@@ -26,7 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
-import { createBrand } from "@/lib/brands/actions";
+import { createBrand, setBrandLogo } from "@/lib/brands/actions";
 import { type CreateBrandInputType } from "@/lib/brands/schemas";
 import { routes } from "@/lib/routes";
 
@@ -64,6 +64,7 @@ export function BrandWizard() {
   const [error, setError] = useState<string | null>(null);
   const [stepIdx, setStepIdx] = useState(0);
   const [form, setForm] = useState<FormState>(INITIAL);
+  const [logoFile, setLogoFile] = useState<File | null>(null);
   const step: StepKey = STEPS[stepIdx].key;
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
@@ -97,6 +98,19 @@ export function BrandWizard() {
         setError(res.error);
         return;
       }
+      // Upload logo after the brand exists. A logo failure leaves the brand
+      // intact — surface the error but still navigate to the detail page so
+      // the user can retry from there in a later slice.
+      if (logoFile) {
+        const fd = new FormData();
+        fd.set("brandId", String(res.brandId));
+        fd.set("file", logoFile);
+        const up = await setBrandLogo(fd);
+        if (!up.ok) {
+          setError(`Brand created, but logo upload failed: ${up.error}`);
+          // Still navigate after a beat so the brand isn't orphaned in UI.
+        }
+      }
       router.push(routes.customer.brands.detail(res.brandId));
       router.refresh();
     });
@@ -119,9 +133,15 @@ export function BrandWizard() {
         ) : step === "voice" ? (
           <VoiceStep form={form} update={update} />
         ) : step === "look" ? (
-          <LookStep form={form} updatePalette={updatePalette} update={update} />
+          <LookStep
+            form={form}
+            updatePalette={updatePalette}
+            update={update}
+            logoFile={logoFile}
+            setLogoFile={setLogoFile}
+          />
         ) : (
-          <ReviewStep form={form} />
+          <ReviewStep form={form} logoFile={logoFile} />
         )}
 
         {error && (
@@ -305,6 +325,8 @@ function LookStep({
   form,
   updatePalette,
   update,
+  logoFile,
+  setLogoFile,
 }: {
   form: FormState;
   updatePalette: (
@@ -312,6 +334,8 @@ function LookStep({
     value: string,
   ) => void;
   update: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
+  logoFile: File | null;
+  setLogoFile: (f: File | null) => void;
 }) {
   const palette = form.palette ?? {};
   const swatches: { key: keyof NonNullable<FormState["palette"]>; label: string }[] =
@@ -327,7 +351,7 @@ function LookStep({
       <CardHeader>
         <CardTitle>Look</CardTitle>
         <CardDescription>
-          Palette and font. Logo upload is coming in a later slice — leave it for now.
+          Palette, font, and logo. Logo will appear on slides that include it.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
@@ -365,13 +389,75 @@ function LookStep({
             </SelectContent>
           </Select>
         </div>
+
+        <Separator />
+
+        <LogoPicker logoFile={logoFile} setLogoFile={setLogoFile} />
       </CardContent>
     </>
   );
 }
 
-function ReviewStep({ form }: { form: FormState }) {
+function LogoPicker({
+  logoFile,
+  setLogoFile,
+}: {
+  logoFile: File | null;
+  setLogoFile: (f: File | null) => void;
+}) {
+  const previewUrl = logoFile ? URL.createObjectURL(logoFile) : null;
+  return (
+    <div className="space-y-2">
+      <Label htmlFor="logo">Logo (optional)</Label>
+      <div className="flex items-center gap-3">
+        {previewUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={previewUrl}
+            alt="Logo preview"
+            className="size-16 rounded-md border bg-muted object-contain"
+          />
+        ) : (
+          <div className="size-16 rounded-md border bg-muted" aria-hidden />
+        )}
+        <input
+          id="logo"
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/svg+xml"
+          onChange={(e) => {
+            const f = e.target.files?.[0] ?? null;
+            setLogoFile(f);
+          }}
+          className="block w-full text-sm file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-primary-foreground hover:file:bg-primary/90"
+        />
+        {logoFile && (
+          <Button
+            type="button"
+            size="icon"
+            variant="ghost"
+            onClick={() => setLogoFile(null)}
+            aria-label="Remove logo"
+          >
+            <X className="size-4" />
+          </Button>
+        )}
+      </div>
+      <p className="text-xs text-muted-foreground">
+        PNG, JPG, WEBP, or SVG. Square works best.
+      </p>
+    </div>
+  );
+}
+
+function ReviewStep({
+  form,
+  logoFile,
+}: {
+  form: FormState;
+  logoFile: File | null;
+}) {
   const palette = form.palette ?? {};
+  const logoPreview = logoFile ? URL.createObjectURL(logoFile) : null;
   return (
     <>
       <CardHeader>
@@ -417,6 +503,19 @@ function ReviewStep({ form }: { form: FormState }) {
           </div>
         </div>
         <Field label="Font" value={form.font} />
+        <div className="space-y-1">
+          <p className="text-muted-foreground">Logo</p>
+          {logoPreview ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoPreview}
+              alt="Logo preview"
+              className="size-16 rounded-md border bg-muted object-contain"
+            />
+          ) : (
+            <p>—</p>
+          )}
+        </div>
       </CardContent>
     </>
   );

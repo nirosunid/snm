@@ -47,6 +47,8 @@ export const routes = {
       new: (): string => `${CUSTOMER_PREFIX}/brands/new`,
       detail: (brandId: number | string): string =>
         `${CUSTOMER_PREFIX}/brands/${encodeURIComponent(String(brandId))}`,
+      library: (brandId: number | string): string =>
+        `${CUSTOMER_PREFIX}/brands/${encodeURIComponent(String(brandId))}/library`,
     },
     /** Predicate: is this path under the customer surface? */
     matches: (path: string): boolean =>
