@@ -43,3 +43,9 @@ src/payload-types.ts
 
 # Disabled / scratch
 *.disabled
+
+# Claude Code — personal, per-developer files
+# Keep these gitignored. Team-shared Claude config (e.g. .claude/settings.json,
+# .claude/agents/, .claude/skills/) is committed and lives outside .claude/local/.
+CLAUDE.local.md
+.claude/local/

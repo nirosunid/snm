@@ -1,0 +1,61 @@
+/**
+ * Central route registry.
+ *
+ * Every URL the app constructs goes through here — `Link href={…}`,
+ * `redirect(…)`, `fetch(…)`, middleware matchers, server-action redirects.
+ * Routes are functions so parameters and query strings are typed and
+ * URL-encoding is centralized; static URLs are also exposed as functions
+ * for symmetry. If you need to rename a path, this is the only file you
+ * touch.
+ *
+ * Don't hand-build a URL string in a page or component — import this and
+ * call the matching builder.
+ */
+
+const CUSTOMER_PREFIX = "/customer";
+const API_CUSTOMER_PREFIX = "/api/customer";
+
+type Query = Record<string, string | number | undefined | null>;
+
+function withQuery(path: string, params?: Query): string {
+  if (!params) return path;
+  const search = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== null && v !== "")
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    .join("&");
+  return search ? `${path}?${search}` : path;
+}
+
+export const routes = {
+  // Public / marketing
+  home: (): string => "/",
+  privacy: (): string => "/privacy",
+  terms: (): string => "/terms",
+
+  // Auth (pre-auth, public)
+  signUp: (params?: { next?: string }): string =>
+    withQuery("/sign-up", { next: params?.next }),
+  signIn: (params?: { next?: string }): string =>
+    withQuery("/sign-in", { next: params?.next }),
+
+  // Customer surface (auth-gated, /customer prefix)
+  customer: {
+    dashboard: (): string => `${CUSTOMER_PREFIX}/dashboard`,
+    generate: (): string => `${CUSTOMER_PREFIX}/generate`,
+    /** Predicate: is this path under the customer surface? */
+    matches: (path: string): boolean =>
+      path === CUSTOMER_PREFIX || path.startsWith(`${CUSTOMER_PREFIX}/`),
+  },
+
+  // Customer-callable APIs (/api/customer prefix)
+  api: {
+    customer: {
+      generate: (): string => `${API_CUSTOMER_PREFIX}/generate`,
+      render: (params: { type: string; copy: string }): string =>
+        withQuery(`${API_CUSTOMER_PREFIX}/render`, params),
+    },
+  },
+
+  // Payload-owned (don't change — referenced for grep + a future rename guard)
+  admin: (): string => "/admin",
+} as const;

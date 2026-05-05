@@ -18,17 +18,23 @@
     "start:prod": "pnpm migrate && pnpm start"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^1.0.0",
+    "@ai-sdk/google": "^1.0.0",
+    "@ai-sdk/openai": "^1.0.0",
     "@payloadcms/db-postgres": "latest",
     "@payloadcms/next": "latest",
     "@payloadcms/richtext-lexical": "latest",
     "@payloadcms/ui": "latest",
+    "ai": "^4.0.0",
     "cross-env": "^7.0.3",
     "graphql": "^16.8.2",
     "next": "15.4.11",
+    "ollama-ai-provider": "^1.0.0",
     "payload": "latest",
     "react": "19.2.1",
     "react-dom": "19.2.1",
-    "sharp": "0.34.2"
+    "sharp": "0.34.2",
+    "zod": "^3.23.0"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

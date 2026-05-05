@@ -1,5 +1,18 @@
 # Plan: Social Media Manager SaaS with AI Content Agents
 
+> **Architecture amendments — read these before the rest of this doc.**
+>
+> This file was written before the architectural pivots that have since landed. The roadmap, build phases, and verification ladder below remain useful, but **the stack and file map sections are out of date**. `CLAUDE.md` at the repo root is the authoritative source of truth — refer to it for current architecture decisions.
+>
+> Key deltas from what's written below:
+>
+> 1. **No Supabase / Inngest / Vercel.** Stack is self-hosted: Postgres + pgvector in Docker, Payload CMS for auth/admin/REST/GraphQL, Docker Compose for dev and prod. (Locked when the user said "Full adopt of products architecture.")
+> 2. **Agent pipeline is in `apps/web` TypeScript, not `apps/agents` Python.** The Python service, RabbitMQ, Celery, and Flower are still in compose but deferred. The pipeline uses **Vercel AI SDK + Zod** under `apps/web/src/lib/agents/`. (Pivot landed during Issue #2.)
+> 3. **Customer routes are prefixed with `/customer`.** Pages under `app/(frontend)/customer/...`, APIs under `app/(frontend)/api/customer/...`. The flat `(app)/dashboard`, `(app)/brands/*` paths described below are superseded by this convention.
+> 4. **Slide renderer is `next/og` `ImageResponse`** (Edge runtime, Satori under the hood) inside `apps/web` — no separate render service.
+>
+> What still applies: scope (sections "MVP-1 scope", "In scope", "Out of MVP-1"), the agent-pipeline behavioral spec (planner/writer/visual-director/editor with one revision loop), the build-sequence ordering, and the verification gates per phase. Translate references like "Drizzle schema", "Inngest function", "Supabase Storage" to their Payload/Docker equivalents when reading the rest of the doc.
+
 ## Context
 
 Greenfield SaaS that lets users connect social-network accounts and have AI agents draft and publish content for them. Target: solo creators and small businesses, with multi-account-per-user as a built-in feature. Working directory `/Users/sorin.dinu/Work/projects/smn` is empty; no prior code or `git` history.

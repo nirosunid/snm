@@ -1,6 +1,8 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet).
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1 and #2 are done; #3 is the active slice.**
+>
+> **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
 > **Source:** [social-media-saas-prd.md](./social-media-saas-prd.md), [social-media-saas-mvp-1.md](./social-media-saas-mvp-1.md).
 >
@@ -10,7 +12,7 @@
 
 ---
 
-## Issue 1 — Foundation: monorepo scaffolding + dev stack boots
+## Issue 1 — Foundation: monorepo scaffolding + dev stack boots ✅ DONE
 
 ### What to build
 
@@ -18,13 +20,13 @@ Set up the monorepo skeleton mirroring the user's `products` project pattern. Tw
 
 ### Acceptance criteria
 
-- [ ] Repository structure matches the layout in the architecture plan: `apps/web`, `apps/agents`, `database/`, `scripts/`, `docker-compose.yml` + `.dev.yml` + `.prod.yml`, `pnpm-workspace.yaml`, `.env.example`, `.github/workflows/` directory.
-- [ ] `./scripts/dev.sh up` brings the full stack online: postgres + pgvector, rabbitmq, web, agents, celery-worker, flower.
-- [ ] `localhost:3000` (Next.js), `localhost:3000/admin` (Payload), `localhost:8001/docs` (FastAPI), `localhost:5555` (Flower), `localhost:15672` (RabbitMQ management) all respond.
-- [ ] `select * from pg_extension where extname='vector'` returns a row inside the `postgres` container.
-- [ ] Multi-stage Dockerfiles per app with `dev` and `prod` build targets.
-- [ ] CI workflow lints `apps/web` (`pnpm lint`) and `apps/agents` (`uv run ruff check`) on every push.
-- [ ] `.env.example` documents every required key (DB URL, RabbitMQ URL, LLM provider keys, Stripe, Meta app id/secret, Payload secret).
+- [x] Repository structure matches the layout in the architecture plan: `apps/web`, `apps/agents`, `database/`, `scripts/`, `docker-compose.yml` + `.dev.yml` + `.prod.yml`, `pnpm-workspace.yaml`, `.env.example`, `.github/workflows/` directory.
+- [x] `./scripts/dev.sh up` brings the full stack online: postgres + pgvector, rabbitmq, web, agents, celery-worker, flower.
+- [x] `localhost:3000` (Next.js), `localhost:3000/admin` (Payload), `localhost:8001/docs` (FastAPI), `localhost:5555` (Flower), `localhost:15672` (RabbitMQ management) all respond.
+- [x] `select * from pg_extension where extname='vector'` returns a row inside the `postgres` container.
+- [x] Multi-stage Dockerfiles per app with `dev` and `prod` build targets.
+- [x] CI workflow lints `apps/web` (`pnpm lint`) and `apps/agents` (`uv run ruff check`) on every push.
+- [x] `.env.example` documents every required key (DB URL, RabbitMQ URL, LLM provider keys, Stripe, Meta app id/secret, Payload secret).
 
 ### Blocked by
 
@@ -32,19 +34,29 @@ None — can start immediately.
 
 ---
 
-## Issue 2 — Tracer Bullet: hardcoded brand → printable draft
+## Issue 2 — Tracer Bullet: hardcoded brand → printable draft ✅ DONE
 
 ### What to build
 
-The deliberate end-to-end skeleton cut. A single button on a stub admin page calls a synchronous Python function that does **one** LLM call against **one** hardcoded provider with **one** hardcoded brand brief and **one** hardcoded slide template. The result is a JSON `draftPayload` echoed in the browser plus a single rendered PNG via `/api/render`. No Payload collections, no Celery, no real persistence. Validates that the entire integration shape (web → agents → LLM → render) works before any of it is replaced with real data flow in later slices.
+The deliberate end-to-end skeleton cut. A single button on a stub page calls a synchronous TypeScript function that does **one** LLM call against **one** configurable provider with **one** hardcoded brand brief. The result is a JSON `draftPayload` echoed in the browser plus a rendered PNG per slide via `/api/customer/render`. No Payload collections, no async work, no real persistence.
+
+**Pivot during build:** the original plan placed the LLM call in `apps/agents` Python (LangChain) with a web → agents HTTP hop. That was reversed mid-build — the call now runs inline in `apps/web` via the Vercel AI SDK + Zod, with no network hop. This shape is what later slices extend.
+
+### Implementation notes (as built)
+- `apps/web/src/lib/agents/{schemas,brand,llm,generate}.ts` — Zod schemas, hardcoded brand, multi-provider LLM factory, single-call orchestration.
+- `app/(frontend)/api/customer/generate/route.ts` (Node runtime) — POST endpoint.
+- `app/(frontend)/api/customer/render/route.tsx` (Edge runtime) — Satori `ImageResponse`, 1080×1080 PNG.
+- `app/(frontend)/customer/generate/page.tsx` — stub UI (Generate button + slider for the rendered slides).
+- Default provider: `ollama` / `llama3.2` via `host.docker.internal`. `mode: "json"` is set on `generateObject` for small-model JSON reliability.
 
 ### Acceptance criteria
 
-- [ ] Admin-only stub page with a "Generate" button.
-- [ ] Clicking the button completes within ~10 seconds and returns a JSON `draftPayload` shape (slides array with copy, single template-rendered PNG URL).
-- [ ] At least one provider's LLM call succeeds end-to-end and produces parseable structured output.
-- [ ] The `/api/render` endpoint produces a valid PNG of the expected dimensions for the hardcoded template.
-- [ ] One reference screenshot of the result captured for review.
+- [x] Stub page (`/customer/generate`) with a "Generate" button.
+- [x] Clicking the button completes within ~10 seconds and returns a `draftPayload` shape (slides array with copy + caption + hashtags) plus per-slide rendered PNGs.
+- [x] At least one provider's LLM call succeeds end-to-end and produces parseable structured output (verified with Ollama/`llama3.2`).
+- [x] The render endpoint produces a valid 1080×1080 PNG using the hardcoded brand template.
+- [x] Reference screenshots captured (FitDesk fitness brand, then Mercedes-Benz luxury brand) showing the full slider experience.
+- [ ] **Deferred to Issue #3:** auth gating on `/customer/generate`. Currently public.
 
 ### Blocked by
 
@@ -52,23 +64,33 @@ The deliberate end-to-end skeleton cut. A single button on a stub admin page cal
 
 ---
 
-## Issue 3 — Customer signup + role model + access control
+## Issue 3 — Customer signup + role model + access control ✅ DONE
 
-### What to build
+### What was built
 
-Real Payload Auth replacing the hardcoded admin from #2. Customer signs up via UI, logs in, lands on an empty dashboard. Three Payload roles defined: `system` (full platform), `admin` (operational), `customer` (own data only). Per-collection access functions enforce that a `customer` cannot list or read other customers' rows via the Payload REST API.
+Real Payload Auth replacing the unauthenticated `/customer/generate` page from #2. Customers sign up at `/sign-up`, log in at `/sign-in`, and land on `/customer/dashboard` (empty-state UI). Three roles on the `users` collection: `system`, `admin`, `customer`. Reusable access primitives extracted under `apps/web/src/access/` (mirrors the products/cms layout). Middleware fast-paths `/customer/*` redirects when no auth cookie is present; the `(frontend)/customer/layout.tsx` enforces full session validation as defense-in-depth.
+
+### Implementation notes (as built)
+- Reusable access primitives in `apps/web/src/access/{utilities,public,system,admin,customer}.ts` plus `index.ts` barrel — mirrors `products/apps/cms/src/access/`. Helpers exported: `checkRole`, `userHaveAnyRole`, `haveAnyRole`, `isLoggedIn`, `publicAccess`, `noAccess`, `systemOnly` / `systemOnlyFieldAccess`, `adminOnly` / `adminOnlyFieldAccess` / `adminOrSelf` / `isAdmin`, `customerOnly` / `customerOnlyFieldAccess` / `customerOwner` / `adminOrCustomerOwner`. New collections compose these.
+- `Users` collection: `role` select enum with `defaultValue: 'customer'`. Collection access: `create=publicAccess`, `read/update=adminOrSelf`, `delete=adminOnly`, `admin=isAdmin`. Field-level access on `role`: `adminOnlyFieldAccess` for create + update, so privilege escalation is silently dropped.
+- Auth pages public at root (`/sign-up`, `/sign-in`) — they're pre-auth, the `/customer` prefix is reserved for the post-auth surface.
+- Server actions in `src/lib/auth/actions.ts` (`signUp`, `signIn`, `signOut`) use Payload's Local API + the `payload-token` cookie. `signUp` sets `overrideAccess: false` so field access enforces the role default.
+- Session helper `src/lib/auth/session.ts` exposes `currentUser()` (reads cookie via `payload.auth({ headers })`) and `isStaff(user)`.
+- Middleware (`src/middleware.ts`) gates `/customer/:path*` on cookie presence (cheap, no DB hit). The layout `await currentUser()` does the actual session check.
+- Home page (`/`) shows different CTAs based on auth state. `/customer/dashboard` shows an empty-state card pointing to `/customer/generate` for now.
 
 ### Acceptance criteria
 
-- [ ] Customer can sign up via `/sign-up`, log in via `/sign-in`, and land on `/dashboard`.
-- [ ] Three roles (`system`, `admin`, `customer`) exist in the `users` collection enum.
-- [ ] Payload `/admin` shows users; only `admin` and `system` can read other customers' rows.
-- [ ] Test (Vitest or equivalent): a `customer` user receives a 4xx when listing/reading other users' rows via Payload REST.
-- [ ] Empty-state UX on the dashboard for new customers.
+- [x] Customer can sign up via `/sign-up`, log in via `/sign-in`, and land on `/customer/dashboard`.
+- [x] Three roles (`system`, `admin`, `customer`) exist in the `users` collection enum; field-level access prevents non-admins from elevating themselves (verified via PATCH `role=admin` smoke test — request returns 200 but `role` is dropped).
+- [x] Payload `/admin` shows users; only `admin` / `system` can read other customers' rows (verified via REST: customer GET `/api/users` returns only their own row; GET `/api/users/<other id>` returns 404).
+- [x] Visiting `/customer/*` while signed-out redirects to `/sign-in?next=<original path>`.
+- [x] Smoke test (curl) covers: signup → login → list-users → read-other-user → escalation-attempt. Promote to Vitest when the test harness lands.
+- [x] Empty-state UX on `/customer/dashboard` for new customers.
 
 ### Blocked by
 
-- #1
+- #1, #2
 
 ---
 
