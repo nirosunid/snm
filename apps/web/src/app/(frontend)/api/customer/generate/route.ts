@@ -1,7 +1,16 @@
 import { NextResponse } from "next/server";
+import { getPayload } from "payload";
 
+import config from "@payload-config";
+
+import {
+  brandLikeFromRecord,
+  HARDCODED_BRAND,
+  type BrandLike,
+} from "@/lib/agents/brand";
 import { generateDraft } from "@/lib/agents/generate";
 import { GenerateRequestSchema } from "@/lib/agents/schemas";
+import { currentUser } from "@/lib/auth/session";
 
 export const runtime = "nodejs";
 
@@ -21,8 +30,36 @@ export async function POST(req: Request) {
     );
   }
 
+  const user = await currentUser();
+  if (!user) {
+    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+
+  let brand: BrandLike = HARDCODED_BRAND;
+  if (parsed.data.brandId !== undefined) {
+    const id = Number(parsed.data.brandId);
+    if (!Number.isInteger(id) || id <= 0) {
+      return NextResponse.json({ error: "Invalid brandId." }, { status: 400 });
+    }
+    const payload = await getPayload({ config });
+    try {
+      const record = await payload.findByID({
+        collection: "brands",
+        id,
+        user,
+        overrideAccess: false,
+      });
+      brand = brandLikeFromRecord(record);
+    } catch {
+      return NextResponse.json(
+        { error: "Brand not found." },
+        { status: 404 },
+      );
+    }
+  }
+
   try {
-    const response = await generateDraft(parsed.data.topic);
+    const response = await generateDraft(parsed.data.topic, brand);
     return NextResponse.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

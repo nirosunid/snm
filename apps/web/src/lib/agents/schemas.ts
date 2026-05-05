@@ -24,6 +24,7 @@ export type DraftPayload = z.infer<typeof DraftPayloadSchema>;
 
 export const GenerateRequestSchema = z.object({
   topic: z.string().min(3).max(300),
+  brandId: z.union([z.number().int().positive(), z.string().min(1)]).optional(),
 });
 export type GenerateRequest = z.infer<typeof GenerateRequestSchema>;
 

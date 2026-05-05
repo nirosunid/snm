@@ -1,14 +1,14 @@
 /**
- * Sync generation — Issue #2 tracer bullet.
+ * Sync generation — Issue #2 tracer bullet, brand-driven from Issue #4 onward.
  *
- * One LLM call against the hardcoded brand brief + user-supplied topic,
- * returns a structured DraftPayload. Replaced in later issues by a
- * multi-stage pipeline (planner → writer → visual director → editor).
+ * One LLM call against the supplied brand brief + user-supplied topic, returns
+ * a structured DraftPayload. Replaced in later issues by a multi-stage
+ * pipeline (planner → writer → visual director → editor).
  */
 
 import { generateObject } from "ai";
 
-import { brandBriefText, HARDCODED_BRAND } from "./brand";
+import { brandBriefText, type BrandLike } from "./brand";
 import { getLanguageModel } from "./llm";
 import {
   DraftPayloadSchema,
@@ -43,11 +43,14 @@ field names, slide \`type\` values, and array order):
 }
 `;
 
-function systemPrompt(): string {
-  return SYSTEM_PROMPT_TEMPLATE.replace("{brief}", brandBriefText());
+function systemPrompt(brand: BrandLike): string {
+  return SYSTEM_PROMPT_TEMPLATE.replace("{brief}", brandBriefText(brand));
 }
 
-export async function generateDraft(topic: string): Promise<GenerateResponse> {
+export async function generateDraft(
+  topic: string,
+  brand: BrandLike,
+): Promise<GenerateResponse> {
   const { model, config } = getLanguageModel();
 
   let draft: DraftPayload;
@@ -56,7 +59,7 @@ export async function generateDraft(topic: string): Promise<GenerateResponse> {
       model,
       mode: "json",
       schema: DraftPayloadSchema,
-      system: systemPrompt(),
+      system: systemPrompt(brand),
       prompt: `Topic for the carousel: ${topic}`,
     });
     draft = result.object;
@@ -72,7 +75,7 @@ export async function generateDraft(topic: string): Promise<GenerateResponse> {
   }
 
   return {
-    brand: HARDCODED_BRAND.name,
+    brand: brand.name,
     topic,
     provider: config.provider,
     model: config.model,

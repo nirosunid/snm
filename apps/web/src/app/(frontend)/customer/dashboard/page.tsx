@@ -1,5 +1,8 @@
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Plus, Sparkles } from "lucide-react";
 import Link from "next/link";
+import { getPayload } from "payload";
+
+import config from "@payload-config";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +23,14 @@ export default async function DashboardPage() {
   const user = await currentUser();
   if (!user) return null;
 
+  const payload = await getPayload({ config });
+  const { totalDocs: brandCount } = await payload.find({
+    collection: "brands",
+    user,
+    overrideAccess: false,
+    limit: 0,
+  });
+
   return (
     <div className="mx-auto max-w-3xl space-y-8">
       <div>
@@ -33,24 +44,45 @@ export default async function DashboardPage() {
         </p>
       </div>
 
-      <Card className="border-dashed">
-        <CardHeader>
-          <CardTitle>You don&apos;t have any brands yet</CardTitle>
-          <CardDescription>
-            Brands hold the voice, palette, and assets your AI agents draft against.
-            You can spin up a draft right now using the playground brief while we
-            build out brand creation.
-          </CardDescription>
-        </CardHeader>
-        <CardFooter>
-          <Button asChild>
-            <Link href={routes.customer.generate()}>
-              Open the generate playground
-              <ArrowRight className="size-4" />
-            </Link>
-          </Button>
-        </CardFooter>
-      </Card>
+      {brandCount === 0 ? (
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle>Create your first brand</CardTitle>
+            <CardDescription>
+              A brand bundles voice, palette, font, and logo — your AI agents
+              draft against one brand at a time.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button asChild>
+              <Link href={routes.customer.brands.new()}>
+                <Plus className="size-4" />
+                New brand
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      ) : (
+        <Card>
+          <CardHeader>
+            <CardTitle>Ready to generate</CardTitle>
+            <CardDescription>
+              You have {brandCount} brand{brandCount === 1 ? "" : "s"}. Open the
+              playground to draft a carousel.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button asChild>
+              <Link href={routes.customer.generate()}>
+                <Sparkles className="size-4" />
+                Open the generate playground
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      )}
 
       {isStaff(user) && (
         <Card>

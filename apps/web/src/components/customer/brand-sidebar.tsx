@@ -1,6 +1,6 @@
 "use client";
 
-import { LayoutDashboard, Sparkles } from "lucide-react";
+import { LayoutDashboard, Palette, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import type * as React from "react";
@@ -27,6 +27,11 @@ const navItems: NavItem[] = [
     title: "Dashboard",
     href: routes.customer.dashboard(),
     icon: <LayoutDashboard className="size-4" />,
+  },
+  {
+    title: "Brands",
+    href: routes.customer.brands.list(),
+    icon: <Palette className="size-4" />,
   },
   {
     title: "Generate",

@@ -22,6 +22,12 @@ export async function GET(req: Request) {
   const slide = parsed.data;
 
   const brand = HARDCODED_BRAND;
+  const palette = {
+    background: brand.palette.background ?? "#F4F4F4",
+    text: brand.palette.text ?? "#0F1419",
+    primary: brand.palette.primary ?? "#0F1419",
+    accent: brand.palette.accent ?? "#7A8A9A",
+  };
   const label =
     slide.type === "hook"
       ? "HOOK"
@@ -41,8 +47,8 @@ export async function GET(req: Request) {
           flexDirection: "column",
           justifyContent: "space-between",
           padding: "80px",
-          background: brand.palette.bg,
-          color: brand.palette.text,
+          background: palette.background,
+          color: palette.text,
           fontFamily: "system-ui, sans-serif",
         }}
       >
@@ -54,7 +60,7 @@ export async function GET(req: Request) {
             fontSize: 28,
             fontWeight: 700,
             letterSpacing: "0.12em",
-            color: brand.palette.accent,
+            color: palette.accent,
           }}
         >
           <span
@@ -62,7 +68,7 @@ export async function GET(req: Request) {
               display: "flex",
               width: 28,
               height: 6,
-              background: brand.palette.accent,
+              background: palette.accent,
               borderRadius: 3,
             }}
           />
@@ -75,7 +81,7 @@ export async function GET(req: Request) {
             fontSize: bodyFontSize,
             fontWeight: 700,
             lineHeight: 1.1,
-            color: brand.palette.primary,
+            color: palette.primary,
           }}
         >
           {slide.copy}
@@ -87,7 +93,7 @@ export async function GET(req: Request) {
             justifyContent: "space-between",
             alignItems: "center",
             fontSize: 24,
-            color: brand.palette.text,
+            color: palette.text,
             opacity: 0.7,
           }}
         >

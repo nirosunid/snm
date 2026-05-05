@@ -42,6 +42,12 @@ export const routes = {
   customer: {
     dashboard: (): string => `${CUSTOMER_PREFIX}/dashboard`,
     generate: (): string => `${CUSTOMER_PREFIX}/generate`,
+    brands: {
+      list: (): string => `${CUSTOMER_PREFIX}/brands`,
+      new: (): string => `${CUSTOMER_PREFIX}/brands/new`,
+      detail: (brandId: number | string): string =>
+        `${CUSTOMER_PREFIX}/brands/${encodeURIComponent(String(brandId))}`,
+    },
     /** Predicate: is this path under the customer surface? */
     matches: (path: string): boolean =>
       path === CUSTOMER_PREFIX || path.startsWith(`${CUSTOMER_PREFIX}/`),
