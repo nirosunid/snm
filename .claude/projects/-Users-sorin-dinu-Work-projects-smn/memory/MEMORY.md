@@ -1,0 +1,1 @@
+- [Customer UI uses Tailwind](feedback_styling_tailwind.md) — Tailwind is the default for customer-facing UI in apps/web; don't write new inline styles there.
