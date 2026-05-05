@@ -29,5 +29,9 @@ export default buildConfig({
     pool: {
       connectionString: process.env.DATABASE_URL,
     },
+    // Always use migrations — never db.push(). Push regenerates the schema
+    // from the collection definitions and would drop the manually-managed
+    // pgvector column on voice_samples.embedding_vec on every hot reload.
+    push: false,
   }),
 });

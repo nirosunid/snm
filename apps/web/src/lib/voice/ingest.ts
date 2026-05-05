@@ -1,8 +1,9 @@
+import { sql } from "@payloadcms/db-postgres";
 import { getPayload } from "payload";
 
 import config from "@payload-config";
 
-import { embedTexts } from "@/lib/agents/embed";
+import { embedTexts, toPgVector } from "@/lib/agents/embed";
 import type { User } from "@/payload-types";
 
 export type IngestResult =
@@ -11,9 +12,13 @@ export type IngestResult =
 
 /**
  * Embed and persist voice samples for a brand. Synchronous: a 10-20-sample
- * paste embeds in ~2 seconds; the deferred Celery/RabbitMQ stack is the
- * natural home for backgrounding this if it ever needs to scale beyond
- * small interactive pastes.
+ * paste embeds in ~2 seconds.
+ *
+ * Two-phase write — Payload owns the JSON `embedding` column (and access
+ * scoping); a follow-up raw SQL UPDATE mirrors the array into the parallel
+ * pgvector `embedding_vec` column so similarity queries hit the HNSW index.
+ * Done outside the create transaction to avoid the v3 hook visibility
+ * issue (a hook's drizzle.execute can't see the uncommitted row).
  */
 export async function ingestVoiceSamples({
   brandId,
@@ -37,10 +42,10 @@ export async function ingestVoiceSamples({
   }
 
   const payload = await getPayload({ config });
-  let created = 0;
+  const createdIds: number[] = [];
   for (let i = 0; i < samples.length; i++) {
     try {
-      await payload.create({
+      const created = await payload.create({
         collection: "voice-samples",
         data: {
           brand: brandId,
@@ -55,17 +60,26 @@ export async function ingestVoiceSamples({
         overrideAccess: false,
         user,
       });
-      created++;
+      createdIds.push(created.id);
     } catch (e) {
+      const raw = e instanceof Error ? e.message : String(e);
+      const cleaned = raw.split(/\nparams:/)[0].trim();
       return {
         ok: false,
-        error:
-          e instanceof Error
-            ? `Persisted ${created} of ${samples.length} samples before failing: ${e.message}`
-            : `Persisted ${created} of ${samples.length} samples before failing.`,
+        error: `Persisted ${createdIds.length} of ${samples.length} samples before failing: ${cleaned}`,
       };
     }
   }
 
-  return { ok: true, created, model };
+  // Mirror the embeddings into the parallel pgvector column. One UPDATE per
+  // row — small enough that a batch CTE isn't worth the complexity for
+  // 10-20-sample pastes; can be optimized later.
+  for (let i = 0; i < createdIds.length; i++) {
+    const vec = toPgVector(embeddings[i]);
+    await payload.db.drizzle.execute(
+      sql`UPDATE voice_samples SET embedding_vec = ${vec}::vector WHERE id = ${createdIds[i]}`,
+    );
+  }
+
+  return { ok: true, created: createdIds.length, model };
 }

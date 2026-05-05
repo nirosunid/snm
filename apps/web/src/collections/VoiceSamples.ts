@@ -1,4 +1,3 @@
-import { sql } from "@payloadcms/db-postgres";
 import type { CollectionConfig } from "payload";
 
 import {
@@ -43,22 +42,10 @@ export const VoiceSamples: CollectionConfig = {
         return data;
       },
     ],
-    afterChange: [
-      async ({ req, doc, operation }) => {
-        // Mirror the embedding JSON into the parallel pgvector column so
-        // similarity queries hit the HNSW index. Embeddings are write-once
-        // in MVP-1 (we don't recompute on update), so 'create' is the only
-        // operation we need.
-        if (operation !== "create") return doc;
-        const embedding = (doc as { embedding?: number[] | null }).embedding;
-        if (!embedding || embedding.length === 0) return doc;
-        const literal = `[${embedding.join(",")}]`;
-        await req.payload.db.drizzle.execute(
-          sql`UPDATE voice_samples SET embedding_vec = ${literal}::vector WHERE id = ${doc.id}`,
-        );
-        return doc;
-      },
-    ],
+    // The pgvector mirror (embedding_vec) is written by ingestVoiceSamples
+    // after payload.create returns — a hook can't do it, because Payload v3
+    // wraps each create in a transaction and a parallel drizzle.execute
+    // can't see the uncommitted row.
   },
   fields: [
     {

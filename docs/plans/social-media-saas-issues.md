@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#4 are done (#4 partial — logo upload from the wizard deferred); #5 is the active slice.** UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#5 are done (#4 partial — logo upload from the wizard deferred); #6 is the active slice.** UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -130,19 +130,48 @@ The hardcoded Mercedes-Benz brief from #2 is no longer the only path: `/customer
 
 ---
 
-## Issue 5 — Voice samples ingest with pgvector retrieval
+## Issue 5 — Voice samples ingest with pgvector retrieval ✅ DONE
 
-### What to build
+### What was built
 
-`voice-samples` Payload collection with a custom `vector(1536)` field (HNSW or IVFFlat index). Paste-N-samples textarea on the brand page splits input into individual samples and POSTs to a new `apps/agents` `/embed` endpoint, which returns embeddings (default model `text-embedding-3-small`). Vectors are stored in the new collection. The pipeline writer in #2 starts pulling top-K stylistically similar samples per generation. Output should be noticeably more on-brand vs the hardcoded version.
+`voice-samples` Payload collection with `brand` (relationship), `owner` (denormalized for fast access scoping — same pattern as Brands), `content` (textarea), `source` (`brief` | `pasted_sample`), `model` (text), and `embedding` (jsonb). A parallel `vector(1536)` column (`embedding_vec`) and HNSW index with `vector_cosine_ops` are added by the same migration via raw SQL — Payload's introspection doesn't see the vector column, so it survives schema-diff cleanly.
+
+Embedding ingest goes through `POST /api/customer/voice-samples` (and a server action `addVoiceSamplesFromPaste` for the UI). Splits the paste on blank-lines first, falls back to single-newline splits when there are no blank lines. Embeds the whole batch in one `embedMany()` call. Cross-tenant guard: a `beforeValidate` hook verifies that the supplied `brandId` belongs to the requesting user (admins/system bypass).
+
+Brand-voice retrieval helper `getBrandVoice(brandId, queryText, k=5)` short-circuits to `[]` if the brand has no samples (saves an embed round-trip), then embeds the query and runs `ORDER BY embedding_vec <=> $vec::vector LIMIT k` against the HNSW index. `generateDraft` calls it and includes the top-K samples in the writer's system prompt as a "Voice samples — mimic this style" block. The generate response now includes `voiceSamplesUsed: number` so callers can verify retrieval fired.
+
+Brand-detail page renders a "Voice samples" card with the count badge, a paste textarea + Submit, and a 3-most-recent preview. Brand list cards show per-brand sample counts via a single aggregate query (no N+1).
+
+### Implementation notes (as built)
+
+- `apps/web/src/collections/VoiceSamples.ts` — schema; `apps/web/src/migrations/20260505_155858_add_voice_samples.{ts,json}` — generated migration, *consolidated into a single `db.execute(sql\`…\`)` block* including extension creation, table, foreign keys, indexes, and the parallel `vector(1536)` column + HNSW index. (Initial generated form had three separate `db.execute` calls and one of them was silently skipped at apply time — split execute calls inside one migration are fragile, so always combine.)
+- `apps/web/src/lib/agents/embed.ts` — provider-agnostic embedding helper. Pads (or truncates) every output to `EMBEDDING_DIMENSION=1536` so the schema stays locked while the embedding provider can flex. Wired providers: `openai` (default, native 1536) and `ollama` (default `nomic-embed-text`, 768 dims, zero-padded — cosine similarity is invariant to zero-padding so retrieval quality is preserved).
+- `apps/web/src/lib/voice/{ingest.ts,actions.ts,schemas.ts,retrieval.ts}` — ingest core, server action, Zod input + paste-splitter, top-K retrieval.
+- `apps/web/src/app/(frontend)/api/customer/voice-samples/route.ts` — REST endpoint accepting `{ brandId, samples[] }` or `{ brandId, paste }`.
+- `apps/web/src/components/customer/voice-samples-form.tsx` — paste UI client component with live "N samples detected" counter.
+- `payload.config.ts` — set `db.push: false` so Payload never silently regenerates the schema and drops the manually-managed `embedding_vec` column on hot reload.
+- `docker-compose.yml` — the `web` service was missing the LLM and embedding env vars (left over from the apps/agents → apps/web pipeline pivot in Issue #2). Added `OPENAI_API_KEY`, `EMBEDDING_PROVIDER`, `EMBEDDING_MODEL`, `OLLAMA_BASE_URL`, the `LLM_*_*` per-stage envs, and `ANTHROPIC_API_KEY` / `GOOGLE_AI_API_KEY` so per-stage provider overrides work.
+
+### Architectural decisions made during build
+
+- **Storage = "Option A" hybrid (mirrors products' `ProductEmbeddings`):** Payload owns the `embedding` jsonb column for ergonomics; a parallel `vector(1536)` column holds the same data for HNSW similarity. Two-phase write: `payload.create` first, then a separate `UPDATE ... SET embedding_vec = $vec::vector WHERE id = $id` outside the create transaction. (Tried as an `afterChange` hook first; Payload v3 wraps creates in a transaction and the hook's drizzle.execute can't see the uncommitted row — `rowCount=0`. Moved the SQL into `ingestVoiceSamples` instead.)
+- **Index = HNSW with `vector_cosine_ops`.** Default knobs; works fine at our scale (10s–100s of samples per brand).
+- **`push: false` is required** because we manage `embedding_vec` outside Payload's schema model. Without it, every dev hot-reload would `db.push()` the collection definitions and drop the column.
+- **Ollama-for-embeddings is supported as a local-dev option** via `EMBEDDING_PROVIDER=ollama` + `EMBEDDING_MODEL=nomic-embed-text`. This is a deliberate deviation from CLAUDE.md's "OpenAI-only" lock — the schema dimension stays at 1536, the 768-dim Ollama output is zero-padded. Caveat: don't mix providers' samples in one DB (different latent spaces). Documented in `.env.example`.
 
 ### Acceptance criteria
 
-- [ ] Customer pastes ≥10 samples on the brand page; rows persist with non-null embeddings.
-- [ ] Direct pgvector query (`order by embedding <-> <query_vec> limit 5`) returns ranked-by-similarity samples.
-- [ ] Pipeline writer prompt now includes top-K voice samples retrieved by similarity to the topic.
-- [ ] A/B comparison: same topic generated with and without voice retrieval — the retrieval version visibly mimics the brand's voice.
-- [ ] Brand-detail page shows the sample count.
+- [x] Customer pastes ≥10 samples; rows persist with non-null embeddings.
+- [x] Direct pgvector query returns ranked-by-similarity samples (verified: query sample ranks at distance 0.0000 against itself, semantically related samples cluster ahead of unrelated ones).
+- [x] Pipeline writer prompt now includes top-K voice samples retrieved by similarity to the topic (verified: generate response includes `voiceSamplesUsed: 5`).
+- [ ] **Manual / qualitative:** A/B comparison of same topic with vs without voice retrieval. Mechanism is wired (set `brandId` to a brand with 0 samples vs one with samples, observe output style); the human-judgement check is left to founder review during prompt tuning.
+- [x] Brand-detail page shows the sample count.
+
+### Notes for follow-on slices
+
+- The `embedding` jsonb column carries the raw float array for forward compatibility (re-indexing, provider migration, debugging); production storage cost is ~6KB per sample which is negligible.
+- If we ever need to switch embedding providers in production, pick one and re-embed everything — there's no in-place dimension change without a coordinated migration + full re-embed (per CLAUDE.md).
+- `getBrandVoice` runs one count query before embedding to avoid wasted API calls for empty brands. The count is cheap given the `voice_samples_brand_idx` btree index.
 
 ### Blocked by
 
