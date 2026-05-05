@@ -7,6 +7,7 @@ import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import { Brands } from "./collections/Brands";
 import { Media } from "./collections/Media";
 import { Users } from "./collections/Users";
+import { VoiceSamples } from "./collections/VoiceSamples";
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
@@ -19,7 +20,7 @@ export default buildConfig({
     },
   },
   editor: lexicalEditor(),
-  collections: [Users, Media, Brands],
+  collections: [Users, Media, Brands, VoiceSamples],
   secret: process.env.PAYLOAD_SECRET || "",
   typescript: {
     outputFile: path.resolve(dirname, "payload-types.ts"),

@@ -34,5 +34,6 @@ export const GenerateResponseSchema = z.object({
   provider: z.string(),
   model: z.string(),
   draft: DraftPayloadSchema,
+  voiceSamplesUsed: z.number().int().nonnegative().default(0),
 });
 export type GenerateResponse = z.infer<typeof GenerateResponseSchema>;

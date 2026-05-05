@@ -1,9 +1,9 @@
 /**
  * Sync generation — Issue #2 tracer bullet, brand-driven from Issue #4 onward.
  *
- * One LLM call against the supplied brand brief + user-supplied topic, returns
- * a structured DraftPayload. Replaced in later issues by a multi-stage
- * pipeline (planner → writer → visual director → editor).
+ * One LLM call against the supplied brand brief + retrieved voice samples
+ * (Issue #5) + user-supplied topic, returns a structured DraftPayload.
+ * Replaced in later issues by a multi-stage pipeline.
  */
 
 import { generateObject } from "ai";
@@ -15,11 +15,12 @@ import {
   type DraftPayload,
   type GenerateResponse,
 } from "./schemas";
+import { getBrandVoice } from "@/lib/voice/retrieval";
 
 const SYSTEM_PROMPT_TEMPLATE = `\
 You are a social-media content writer working within a brand brief.
 
-{brief}
+{brief}{voice}
 
 You produce structured carousel drafts as JSON. Each carousel has 3 slides:
 1. A \`hook\` slide: a short, intriguing headline (8-14 words) that earns the swipe.
@@ -43,15 +44,31 @@ field names, slide \`type\` values, and array order):
 }
 `;
 
-function systemPrompt(brand: BrandLike): string {
-  return SYSTEM_PROMPT_TEMPLATE.replace("{brief}", brandBriefText(brand));
+function voiceSection(samples: string[]): string {
+  if (samples.length === 0) return "";
+  const block = samples.map((s, i) => `[${i + 1}] ${s}`).join("\n\n");
+  return `\n\nVoice samples — mimic this style closely (rhythm, vocabulary, sentence shape):\n\n${block}\n`;
+}
+
+function systemPrompt(brand: BrandLike, voice: string[]): string {
+  return SYSTEM_PROMPT_TEMPLATE.replace("{brief}", brandBriefText(brand)).replace(
+    "{voice}",
+    voiceSection(voice),
+  );
 }
 
 export async function generateDraft(
   topic: string,
   brand: BrandLike,
+  options?: { brandId?: number; voiceK?: number },
 ): Promise<GenerateResponse> {
   const { model, config } = getLanguageModel();
+
+  const voice = await getBrandVoice(
+    options?.brandId,
+    topic,
+    options?.voiceK ?? 5,
+  );
 
   let draft: DraftPayload;
   try {
@@ -59,7 +76,7 @@ export async function generateDraft(
       model,
       mode: "json",
       schema: DraftPayloadSchema,
-      system: systemPrompt(brand),
+      system: systemPrompt(brand, voice),
       prompt: `Topic for the carousel: ${topic}`,
     });
     draft = result.object;
@@ -80,5 +97,6 @@ export async function generateDraft(
     provider: config.provider,
     model: config.model,
     draft,
+    voiceSamplesUsed: voice.length,
   };
 }

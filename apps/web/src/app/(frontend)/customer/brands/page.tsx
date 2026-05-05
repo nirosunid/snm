@@ -1,13 +1,14 @@
+import { sql } from "@payloadcms/db-postgres";
 import { ArrowRight, Plus } from "lucide-react";
 import Link from "next/link";
 import { getPayload } from "payload";
 
 import config from "@payload-config";
 
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
-  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -28,6 +29,22 @@ export default async function BrandsListPage() {
     sort: "-updatedAt",
     limit: 50,
   });
+
+  // Single aggregate to avoid N+1 for sample counts on the cards.
+  const brandIds = brands.map((b) => b.id);
+  const sampleCounts = new Map<number, number>();
+  if (brandIds.length > 0) {
+    const result = await payload.db.drizzle.execute(sql`
+      SELECT brand_id, count(*)::int AS n
+      FROM voice_samples
+      WHERE brand_id IN ${brandIds}
+      GROUP BY brand_id
+    `);
+    const rows =
+      (result as unknown as { rows?: Array<{ brand_id: number; n: number }> })
+        .rows ?? [];
+    for (const r of rows) sampleCounts.set(r.brand_id, r.n);
+  }
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -67,26 +84,35 @@ export default async function BrandsListPage() {
         </Card>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {brands.map((brand) => (
-            <Card key={brand.id} className="transition-colors hover:border-primary">
-              <Link
-                href={routes.customer.brands.detail(brand.id)}
-                className="block p-6"
+          {brands.map((brand) => {
+            const samples = sampleCounts.get(brand.id) ?? 0;
+            return (
+              <Card
+                key={brand.id}
+                className="transition-colors hover:border-primary"
               >
-                <div className="flex items-center gap-3">
-                  <PaletteSwatch palette={brand.palette} />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate font-medium">{brand.name}</p>
-                    {brand.niche ? (
-                      <p className="truncate text-sm text-muted-foreground">
-                        {brand.niche}
-                      </p>
-                    ) : null}
+                <Link
+                  href={routes.customer.brands.detail(brand.id)}
+                  className="block p-6"
+                >
+                  <div className="flex items-center gap-3">
+                    <PaletteSwatch palette={brand.palette} />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate font-medium">{brand.name}</p>
+                      {brand.niche ? (
+                        <p className="truncate text-sm text-muted-foreground">
+                          {brand.niche}
+                        </p>
+                      ) : null}
+                    </div>
+                    <Badge variant="secondary" className="shrink-0">
+                      {samples} sample{samples === 1 ? "" : "s"}
+                    </Badge>
                   </div>
-                </div>
-              </Link>
-            </Card>
-          ))}
+                </Link>
+              </Card>
+            );
+          })}
         </div>
       )}
     </div>

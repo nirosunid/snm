@@ -59,6 +59,7 @@ export const routes = {
       generate: (): string => `${API_CUSTOMER_PREFIX}/generate`,
       render: (params: { type: string; copy: string }): string =>
         withQuery(`${API_CUSTOMER_PREFIX}/render`, params),
+      voiceSamples: (): string => `${API_CUSTOMER_PREFIX}/voice-samples`,
     },
   },
 

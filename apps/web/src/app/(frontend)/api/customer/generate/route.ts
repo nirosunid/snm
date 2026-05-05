@@ -36,6 +36,7 @@ export async function POST(req: Request) {
   }
 
   let brand: BrandLike = HARDCODED_BRAND;
+  let brandId: number | undefined;
   if (parsed.data.brandId !== undefined) {
     const id = Number(parsed.data.brandId);
     if (!Number.isInteger(id) || id <= 0) {
@@ -50,6 +51,7 @@ export async function POST(req: Request) {
         overrideAccess: false,
       });
       brand = brandLikeFromRecord(record);
+      brandId = id;
     } catch {
       return NextResponse.json(
         { error: "Brand not found." },
@@ -59,7 +61,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const response = await generateDraft(parsed.data.topic, brand);
+    const response = await generateDraft(parsed.data.topic, brand, { brandId });
     return NextResponse.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

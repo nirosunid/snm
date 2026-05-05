@@ -39,6 +39,22 @@ services:
       SMTP_PASS: ${SMTP_PASS:-}
       EMAIL_FROM: ${EMAIL_FROM:-noreply@example.com}
       EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-SMN}
+      # LLM + embedding config — the agent pipeline runs in apps/web TS (Issue #2 pivot)
+      DEFAULT_LLM_PROVIDER: ${DEFAULT_LLM_PROVIDER:-ollama}
+      DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-llama3.2}
+      LLM_PLANNER_PROVIDER: ${LLM_PLANNER_PROVIDER:-}
+      LLM_PLANNER_MODEL: ${LLM_PLANNER_MODEL:-}
+      LLM_WRITER_PROVIDER: ${LLM_WRITER_PROVIDER:-}
+      LLM_WRITER_MODEL: ${LLM_WRITER_MODEL:-}
+      LLM_REVIEWER_PROVIDER: ${LLM_REVIEWER_PROVIDER:-}
+      LLM_REVIEWER_MODEL: ${LLM_REVIEWER_MODEL:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
     networks:
       - smn-network
       - proxy-network

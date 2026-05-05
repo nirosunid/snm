@@ -70,6 +70,7 @@ export interface Config {
     users: User;
     media: Media;
     brands: Brand;
+    'voice-samples': VoiceSample;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -80,6 +81,7 @@ export interface Config {
     users: UsersSelect<false> | UsersSelect<true>;
     media: MediaSelect<false> | MediaSelect<true>;
     brands: BrandsSelect<false> | BrandsSelect<true>;
+    'voice-samples': VoiceSamplesSelect<false> | VoiceSamplesSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -225,6 +227,38 @@ export interface Brand {
 }
 /**
  * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "voice-samples".
+ */
+export interface VoiceSample {
+  id: number;
+  brand: number | Brand;
+  /**
+   * Stamped automatically from the authenticated user.
+   */
+  owner: number | User;
+  content: string;
+  source: 'brief' | 'pasted_sample';
+  /**
+   * Embedding model used (e.g. text-embedding-3-small).
+   */
+  model: string;
+  /**
+   * Float array (1536 dims). The matching pgvector column is mirrored automatically via afterChange hook.
+   */
+  embedding:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
 export interface PayloadKv {
@@ -258,6 +292,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'brands';
         value: number | Brand;
+      } | null)
+    | ({
+        relationTo: 'voice-samples';
+        value: number | VoiceSample;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -381,6 +419,20 @@ export interface BrandsSelect<T extends boolean = true> {
       };
   font?: T;
   logo?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "voice-samples_select".
+ */
+export interface VoiceSamplesSelect<T extends boolean = true> {
+  brand?: T;
+  owner?: T;
+  content?: T;
+  source?: T;
+  model?: T;
+  embedding?: T;
   updatedAt?: T;
   createdAt?: T;
 }

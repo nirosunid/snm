@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { VoiceSamplesForm } from "@/components/customer/voice-samples-form";
 import { currentUser } from "@/lib/auth/session";
 import { routes } from "@/lib/routes";
 import type { Brand } from "@/payload-types";
@@ -42,6 +43,15 @@ export default async function BrandDetailPage({ params }: Props) {
   } catch {
     notFound();
   }
+
+  const { totalDocs: sampleCount, docs: recentSamples } = await payload.find({
+    collection: "voice-samples",
+    user,
+    overrideAccess: false,
+    where: { brand: { equals: brand.id } },
+    sort: "-createdAt",
+    limit: 3,
+  });
 
   const palette = brand.palette ?? {};
   const swatches = (
@@ -83,6 +93,46 @@ export default async function BrandDetailPage({ params }: Props) {
             label="Vocabulary"
             items={(brand.vocabulary ?? []).map((v) => v.item)}
           />
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Voice samples</CardTitle>
+              <CardDescription>
+                Past posts the agent retrieves by similarity to draft on-brand copy.
+              </CardDescription>
+            </div>
+            <Badge variant="secondary">
+              {sampleCount} sample{sampleCount === 1 ? "" : "s"}
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <VoiceSamplesForm brandId={brand.id} />
+
+          {recentSamples.length > 0 && (
+            <>
+              <Separator />
+              <div className="space-y-3">
+                <p className="text-sm font-medium">Most recent</p>
+                <ul className="space-y-2 text-sm">
+                  {recentSamples.map((s) => (
+                    <li
+                      key={s.id}
+                      className="rounded-md border bg-muted/40 p-3 text-muted-foreground"
+                    >
+                      <span className="line-clamp-3 whitespace-pre-wrap">
+                        {s.content}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
         </CardContent>
       </Card>
 

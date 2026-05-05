@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#3 are done; #4 is the active slice.** UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#4 are done (#4 partial — logo upload from the wizard deferred); #5 is the active slice.** UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -96,19 +96,33 @@ Real Payload Auth replacing the unauthenticated `/customer/generate` page from #
 
 ---
 
-## Issue 4 — Brand creation flow + brand profile UI
+## Issue 4 — Brand creation flow + brand profile UI ✅ DONE (partial — logo upload deferred)
 
-### What to build
+### What was built
 
-`Brands` Payload collection with the brand brief (tone, niche, target audience, dos, donts, vocabulary), brand palette (primary, secondary, accent, background, text), font (select from 3–5 shipped options), and logo (Payload upload → media collection). Multi-step form for customers to create a brand. Brand-detail page renders the captured profile. Replaces the hardcoded brand from #2.
+`brands` Payload collection with the full brand brief (name, niche, audience, tone, `dos[]`, `donts[]`, `vocabulary[]`), 5-color palette (`primary`, `secondary`, `accent`, `background`, `text` — hex with regex validation), `font` select (Inter, Playfair Display, IBM Plex Sans), and `logo` upload relation. Customer-owned via an `owner` relationship to users; `defaultValue: ({ user }) => user.id` plus `adminOnlyFieldAccess` on create+update on the field, so customers cannot create brands owned by anyone else and PATCH attempts to reassign owner are silently dropped (mirrors the role-escalation defense on Users). Collection-level `read/update/delete = adminOrCustomerOwner`.
+
+A 4-step wizard at `/customer/brands/new` (Identity → Voice → Look → Review) using shadcn/ui primitives, native `<input type="color">` palette pickers, and a `useTransition`-driven server action. Brand list at `/customer/brands` (cards with palette-stripe swatch) and detail at `/customer/brands/[brandId]` (palette swatches + font preview). `Brands` link added to the customer sidebar; dashboard CTA branches on whether the user has any brands.
+
+The hardcoded Mercedes-Benz brief from #2 is no longer the only path: `/customer/generate` shows a brand picker (defaults to first owned brand, falls back to a "Playground brand (Mercedes-Benz)" option when the user has none). `/api/customer/generate` accepts `brandId` and loads the record under `overrideAccess: false` for access scoping.
+
+### Implementation notes (as built)
+- `apps/web/src/collections/Brands.ts` — schema; `apps/web/src/migrations/20260505_150409_add_brands.{ts,json}` — generated migration (registered in `migrations/index.ts`).
+- `apps/web/src/lib/brands/{actions.ts,schemas.ts}` — server action (`createBrand`) split from the Zod input schema, because `"use server"` files can only export async functions (caught the hard way).
+- `apps/web/src/components/customer/brand-wizard.tsx` — wizard client component; `apps/web/src/components/customer/generate-playground.tsx` — extracted from the old generate page for the brand-picker version.
+- `apps/web/src/lib/agents/brand.ts` — `BrandLike` is now the canonical brief shape (not the hardcoded constant); `brandLikeFromRecord(brand: Brand)` adapts a Payload record. `HARDCODED_BRAND` is retained as the playground fallback. Palette field names migrated from `bg` to `background` to match the collection.
+- Smoke test (curl, scripted) verified all five access cases: own list shows 1 / cross-tenant 404 / cross-tenant list-empty / owner stamping on create / silent drop of customer-supplied owner on PATCH.
 
 ### Acceptance criteria
 
-- [ ] Customer creates a brand via the UI; row persists with all fields populated.
-- [ ] Logo uploads to the `media` collection; preview renders on the detail page.
-- [ ] Brand-detail page renders palette swatches and the selected font.
-- [ ] Access test: another customer cannot read this brand's row via REST.
-- [ ] One customer can have multiple brands (E1 multi-brand-per-user, even if MVP-1 UI emphasizes one).
+- [x] Customer creates a brand via the UI; row persists with all fields populated.
+- [ ] **Deferred:** logo uploads from the wizard. The collection has the `logo` upload field, and the detail page is wired to render a logo preview, but the wizard's "Look" step says "logo upload is coming in a later slice." Most natural home is alongside Issue #6 (asset library), since both run through the same media-upload flow.
+- [x] Brand-detail page renders palette swatches and the selected font (with a font-preview pangram).
+- [x] Access test: another customer cannot read this brand's row via REST. (curl smoke test scripted; promote to Vitest with the test harness.)
+- [x] One customer can have multiple brands (E1 multi-brand-per-user; the wizard does not enforce a single-brand cap and the list page renders N cards).
+
+### Notes for follow-on slices
+- The render route at `/api/customer/render` still uses `HARDCODED_BRAND.palette` for slide PNGs. Brand-aware rendering is Issue #7 ("Slide template library + Satori renderer") — that's where it naturally lands. Until then, the playground generates on-brand *copy* but renders Mercedes-style PNGs regardless of selected brand.
 
 ### Blocked by
 
