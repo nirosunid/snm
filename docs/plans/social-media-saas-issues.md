@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1 and #2 are done; #3 is the active slice.**
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#3 are done; #4 is the active slice.** UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -8,7 +8,9 @@
 >
 > **How to use this file:** when an issue tracker (GitHub Projects, Linear, Jira, etc.) is configured, copy each `## Issue N` section into a new ticket. Apply the `needs-triage` label to each. Cross-reference numbers as you create them — the "Blocked by" field uses `#N` placeholders that map to the order below; replace with real issue identifiers as you go.
 >
-> **Critical path:** `#1 → (#3, #4 parallel) → #5, #6, #7, #8 → #9 → #10, #11, #12, #14 → #13 → #15 → #16 → #17 → #18 → #19`. `#16` and `#17` run in parallel from week 1.
+> **Critical path:** `#1 → #2 → #3 → #4 → #5, #6, #7, #8 → #9 → #10, #11, #12, #14 → #13 → #15 → #16 → #17 → #18 → #19`. `#16` and `#17` run in parallel from week 1.
+>
+> **UI scaffolding (between #3 and #4, not its own issue):** Tailwind CSS v4 wired into `apps/web` (`postcss.config.mjs` mounted into the dev container, `globals.css` importing `tailwindcss`). shadcn/ui initialized (`new-york` style, `slate` base, full `src/components/ui/` set, `cn` helper, `use-mobile` hook, oklch-green theme tokens with dark-mode). Customer shell ported to `SidebarProvider` + `BrandHeader` + `BrandSidebar` (`src/components/customer/`); `/customer/dashboard` and `/customer/generate` ported to the new primitives. This is the styling foundation Issue #4's brand-creation UI builds on — multi-step form, palette picker, font picker, logo upload should use the shadcn primitives, not bespoke styles.
 
 ---
 
@@ -56,7 +58,7 @@ The deliberate end-to-end skeleton cut. A single button on a stub page calls a s
 - [x] At least one provider's LLM call succeeds end-to-end and produces parseable structured output (verified with Ollama/`llama3.2`).
 - [x] The render endpoint produces a valid 1080×1080 PNG using the hardcoded brand template.
 - [x] Reference screenshots captured (FitDesk fitness brand, then Mercedes-Benz luxury brand) showing the full slider experience.
-- [ ] **Deferred to Issue #3:** auth gating on `/customer/generate`. Currently public.
+- [x] **Deferred to Issue #3:** auth gating on `/customer/generate`. *Landed in #3 — middleware redirects unauthenticated requests on `/customer/*` to `/sign-in?next=...`.*
 
 ### Blocked by
 

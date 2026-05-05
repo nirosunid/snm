@@ -10,6 +10,7 @@
 > 2. **Agent pipeline is in `apps/web` TypeScript, not `apps/agents` Python.** The Python service, RabbitMQ, Celery, and Flower are still in compose but deferred. The pipeline uses **Vercel AI SDK + Zod** under `apps/web/src/lib/agents/`. (Pivot landed during Issue #2.)
 > 3. **Customer routes are prefixed with `/customer`.** Pages under `app/(frontend)/customer/...`, APIs under `app/(frontend)/api/customer/...`. The flat `(app)/dashboard`, `(app)/brands/*` paths described below are superseded by this convention.
 > 4. **Slide renderer is `next/og` `ImageResponse`** (Edge runtime, Satori under the hood) inside `apps/web` — no separate render service.
+> 5. **Styling stack is Tailwind CSS v4 + shadcn/ui** (`new-york` style, `slate` base, oklch-green theme, full `src/components/ui/` set), not bare Tailwind. The customer shell uses `SidebarProvider` + `BrandHeader` + `BrandSidebar` from `src/components/customer/`. New customer pages should compose shadcn primitives (`Card`, `Button`, `Input`, `Form`, `Select`, etc.) rather than write bespoke styles. References below to "shadcn-style UI components" should be read as "actual shadcn/ui components."
 >
 > What still applies: scope (sections "MVP-1 scope", "In scope", "Out of MVP-1"), the agent-pipeline behavioral spec (planner/writer/visual-director/editor with one revision loop), the build-sequence ordering, and the verification gates per phase. Translate references like "Drizzle schema", "Inngest function", "Supabase Storage" to their Payload/Docker equivalents when reading the rest of the doc.
 
