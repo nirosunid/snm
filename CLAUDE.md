@@ -42,17 +42,25 @@ These were debated, decided, and locked. Don't re-litigate without explicit user
 
 All dev runs through Docker — Docker Desktop or OrbStack required. Local `pnpm` / `uv` are only needed for IDE support and fast type-checks.
 
+### Rule: every Docker command goes through `scripts/`
+
+Never run `docker compose -f docker-compose.yml -f docker-compose.{dev,prod}.yml ...` directly — neither in shell suggestions, in CI, nor in documentation. The wrappers below encapsulate the multi-file compose flags and shared workflows. If a needed command isn't a subcommand yet, **add one to `scripts/dev.sh` and `scripts/prod.sh`** rather than reaching for raw `docker compose`. The only place raw `docker compose` lives is *inside* the script source files.
+
 ### Dev stack
 ```bash
-cp .env.example .env                 # first-time only; edit at minimum OPENAI_API_KEY
-./scripts/dev.sh up                  # build and start full stack (foreground)
-./scripts/dev.sh up web              # only one service
-./scripts/dev.sh start               # start already-built services
-./scripts/dev.sh logs web            # follow logs
+cp .env.example .env                       # first-time only; edit at minimum OPENAI_API_KEY
+./scripts/dev.sh up                        # build and start full stack (foreground)
+./scripts/dev.sh up web                    # only one service
+./scripts/dev.sh start                     # start already-built services
+./scripts/dev.sh logs web                  # follow logs
 ./scripts/dev.sh stop web
 ./scripts/dev.sh restart web
-./scripts/dev.sh down                # stop and remove
-./scripts/dev.sh migrate             # run Payload migrations
+./scripts/dev.sh down                      # stop and remove
+./scripts/dev.sh migrate                   # run Payload migrations
+./scripts/dev.sh import-map                # regenerate Payload admin importMap
+./scripts/dev.sh generate-types            # regenerate Payload TS types
+./scripts/dev.sh exec web sh               # arbitrary command inside a running service
+./scripts/dev.sh config                    # validate merged compose config (parse only)
 ./scripts/dev.sh backup-db
 ./scripts/dev.sh restore-db <file>
 ```
@@ -60,7 +68,7 @@ cp .env.example .env                 # first-time only; edit at minimum OPENAI_A
 Endpoints when up: `localhost:3000` (Next.js), `localhost:3000/admin` (Payload admin), `localhost:8001/docs` (FastAPI Swagger), `localhost:5555` (Flower / Celery), `localhost:15672` (RabbitMQ management).
 
 ### Prod stack
-Mirrors dev with `prod.sh`; runs detached (`-d`).
+Mirrors dev with `prod.sh`; runs detached (`-d`). Same subcommand surface (`up`, `start`, `restart`, `down`, `stop`, `logs`, `migrate`, `import-map`, `generate-types`, `exec`, `config`, `backup-db`, `restore-db`).
 ```bash
 ./scripts/prod.sh up
 ./scripts/prod.sh migrate
@@ -96,9 +104,9 @@ uv run mypy src
 
 `uv` install: `brew install uv` (macOS) or `curl -LsSf https://astral.sh/uv/install.sh | sh` (Linux).
 
-### Validating the stack without booting Docker
+### Validating without booting Docker
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet  # verify compose parses
+./scripts/dev.sh config                                                    # verify merged compose parses
 python3 -c "import tomllib; tomllib.loads(open('apps/agents/pyproject.toml').read())"
 cd apps/web && pnpm exec tsc --noEmit && pnpm lint
 ```
@@ -113,7 +121,7 @@ cd apps/web && pnpm exec tsc --noEmit && pnpm lint
 ### `apps/web` Payload conventions
 - Collections live in `src/collections/`. Each collection's `access` block enforces role-based scoping (`customer` sees only `brand.owner == req.user`; `admin`/`system` see all).
 - Schema changes flow through Payload migrations in `src/migrations/` — never rely on `db.push()` in production. Each migration must register in `src/migrations/index.ts`. Use `IF EXISTS` / `IF NOT EXISTS` guards in raw SQL.
-- After any collection schema change: `pnpm generate:types` regenerates `src/payload-types.ts`. After any admin custom component change: `pnpm generate:importmap`.
+- After any collection schema change: `./scripts/dev.sh generate-types` (regenerates `src/payload-types.ts`). After any admin custom component change OR after first install with empty importMap: `./scripts/dev.sh import-map` (regenerates `src/app/(payload)/admin/importMap.js`). Both must run inside the web container — the script does that for you.
 - The `vector(1536)` column on `voice-samples.embedding` requires Drizzle-level customization on Payload's postgres adapter — handled in Issue #5.
 
 ### `apps/agents` Python package layout
