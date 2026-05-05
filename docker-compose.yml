@@ -1,0 +1,178 @@
+include:
+  - database/docker-compose.db.yml
+  - database/docker-compose.queue.yml
+
+services:
+  # ============================================
+  # Web — Next.js 15 + Payload CMS 3.x
+  # ============================================
+  web:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+      args:
+        DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+        PAYLOAD_SECRET: ${PAYLOAD_SECRET}
+        PAYLOAD_PUBLIC_SERVER_URL: ${PAYLOAD_PUBLIC_SERVER_URL:-http://localhost:3000}
+        NEXT_PUBLIC_SERVER_URL: ${NEXT_PUBLIC_SERVER_URL:-http://localhost:3000}
+        AGENT_SERVICE_URL: ${AGENT_SERVICE_URL:-http://agents:8001}
+    container_name: smn-web
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      PAYLOAD_SECRET: ${PAYLOAD_SECRET}
+      PAYLOAD_PUBLIC_SERVER_URL: ${PAYLOAD_PUBLIC_SERVER_URL:-http://localhost:3000}
+      NEXT_PUBLIC_SERVER_URL: ${NEXT_PUBLIC_SERVER_URL:-http://localhost:3000}
+      AGENT_SERVICE_URL: ${AGENT_SERVICE_URL:-http://agents:8001}
+      AGENT_CMS_SECRET: ${AGENT_CMS_SECRET:-changeme}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:-changeme-token-encryption-key-min-32-chars-here}
+      META_APP_ID: ${META_APP_ID:-}
+      META_APP_SECRET: ${META_APP_SECRET:-}
+      INSTAGRAM_REDIRECT_URI: ${INSTAGRAM_REDIRECT_URI:-http://localhost:3000/api/oauth/instagram/callback}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
+      STRIPE_WEBHOOKS_SIGNING_SECRET: ${STRIPE_WEBHOOKS_SIGNING_SECRET:-}
+      STRIPE_PRO_PRICE_ID: ${STRIPE_PRO_PRICE_ID:-}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      EMAIL_FROM: ${EMAIL_FROM:-noreply@example.com}
+      EMAIL_FROM_NAME: ${EMAIL_FROM_NAME:-SMN}
+    networks:
+      - smn-network
+      - proxy-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"const n=require('net'),s=n.connect(3000,'localhost',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));setTimeout(()=>process.exit(1),4000)\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  # ============================================
+  # Agents — Python FastAPI service (HTTP surface)
+  # ============================================
+  agents:
+    build:
+      context: ./apps/agents
+      dockerfile: Dockerfile
+    container_name: smn-agents
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      AGENT_SERVICE_PORT: 8001
+      CMS_BASE_URL: http://web:3000
+      AGENT_CMS_SECRET: ${AGENT_CMS_SECRET:-changeme}
+      DEFAULT_LLM_PROVIDER: ${DEFAULT_LLM_PROVIDER:-anthropic}
+      DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-claude-sonnet-4-6}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-smn}
+    networks:
+      - smn-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8001/health', timeout=5)\" 2>/dev/null"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # Celery worker — consumes the AI pipeline queue
+  # ============================================
+  celery-worker:
+    build:
+      context: ./apps/agents
+      dockerfile: Dockerfile
+    container_name: smn-celery-worker
+    restart: unless-stopped
+    command: uv run celery -A smn_agents.celery_app worker --loglevel=info --concurrency=2
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      CMS_BASE_URL: http://web:3000
+      AGENT_CMS_SECRET: ${AGENT_CMS_SECRET:-changeme}
+      DEFAULT_LLM_PROVIDER: ${DEFAULT_LLM_PROVIDER:-anthropic}
+      DEFAULT_LLM_MODEL: ${DEFAULT_LLM_MODEL:-claude-sonnet-4-6}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      GOOGLE_AI_API_KEY: ${GOOGLE_AI_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      OLLAMA_API_KEY: ${OLLAMA_API_KEY:-}
+      EMBEDDING_PROVIDER: ${EMBEDDING_PROVIDER:-openai}
+      EMBEDDING_MODEL: ${EMBEDDING_MODEL:-text-embedding-3-small}
+      TAVILY_API_KEY: ${TAVILY_API_KEY:-}
+      LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+      LANGSMITH_ENDPOINT: ${LANGSMITH_ENDPOINT:-https://api.smith.langchain.com}
+      LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+      LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-smn}
+    networks:
+      - smn-network
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "uv run celery -A smn_agents.celery_app inspect ping --timeout=5 2>&1 | grep -q pong"]
+      interval: 60s
+      timeout: 15s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # Flower — Celery monitoring UI on port 5555
+  # ============================================
+  flower:
+    build:
+      context: ./apps/agents
+      dockerfile: Dockerfile
+    container_name: smn-flower
+    restart: unless-stopped
+    command: uv run celery -A smn_agents.celery_app flower --port=5555
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: 5672
+      FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:-admin:changeme}
+    networks:
+      - smn-network
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+networks:
+  smn-network:
+    driver: bridge
+  # External network shared with the separate `nginx-proxy-manager` compose
+  # stack on the host. NPM forwards `smn.<your-domain>` to the `web` container
+  # by container name through this network. Declared external so both stacks
+  # can attach. Create once per host before bringing the stack up:
+  #   docker network create proxy-network
+  proxy-network:
+    external: true

@@ -1,0 +1,67 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+# src/ layout — package code lives in src/smn_agents/.
+# `uv sync` installs this project as an editable install in the venv;
+# after that, `from smn_agents.X import Y` works anywhere (FastAPI, Celery,
+# pytest) without any PYTHONPATH or symlink hacks. PHP equivalent: composer
+# install + PSR-4 autoload mapping `Smn\\Agents\\` -> src/.
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project]
+name = "smn-agents"
+version = "0.1.0"
+description = "SMN — AI agent service: planner / writer / visual director / editor for carousel generation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi>=0.115.0",
+  "uvicorn[standard]>=0.34.0",
+  "celery[rabbitmq]>=5.4.0",
+  "flower>=2.0.0",
+  "pydantic>=2.10.0",
+  "pydantic-settings>=2.7.0",
+  "httpx>=0.28.0",
+  "python-dotenv>=1.0.0",
+  "asyncpg>=0.30.0",
+  "psycopg[binary]>=3.2.0",
+  "pgvector>=0.3.0",
+  # LangChain / LangGraph stack — mirrors products' apps/agents architecture.
+  # The LLMClient pattern in the plan is implemented via langchain_core's
+  # BaseChatModel + per-provider adapters; the agent pipeline is a LangGraph
+  # StateGraph. See products/apps/agents/src/services/llm.py for the factory shape.
+  "langchain>=0.3.0",
+  "langgraph>=0.3.0",
+  "langchain-anthropic>=0.3.0",
+  "langchain-google-genai>=2.0.0",
+  "langchain-openai>=0.3.0",
+  "langchain-ollama>=0.3.0",
+  "langsmith>=0.2.0",
+  "tavily-python>=0.5.0",
+  "Pillow>=11.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0.0",
+  "pytest-asyncio>=0.24.0",
+  "ruff>=0.9.0",
+  "mypy>=1.14.0",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "UP"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]

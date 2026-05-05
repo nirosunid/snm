@@ -1,0 +1,25 @@
+services:
+  # ============================================
+  # RabbitMQ — async messaging for Celery workers
+  # ============================================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: smn-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      # Increase consumer_timeout to 6 hours (default 30 min would fail on slow AI tasks).
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbit consumer_timeout 21600000"
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - smn-network
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  rabbitmq-data:

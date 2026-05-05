@@ -1,0 +1,45 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+__pycache__/
+*.py[cod]
+.venv/
+.uv-cache/
+
+# Build output
+.next/
+dist/
+build/
+*.tsbuildinfo
+
+# Env files (only .env.example is committed)
+.env
+.env.local
+.env.prod
+.env.*.local
+
+# Logs
+*.log
+logs/
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Backups
+backups/
+
+# Test artifacts
+coverage/
+.pytest_cache/
+.ruff_cache/
+htmlcov/
+
+# Payload generated files
+src/payload-types.ts
+
+# Disabled / scratch
+*.disabled

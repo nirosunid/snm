@@ -1,0 +1,22 @@
+include:
+  - database/docker-compose.db.prod.yml
+
+services:
+  web:
+    build:
+      target: prod
+    environment:
+      NODE_ENV: production
+    restart: always
+  agents:
+    build:
+      target: prod
+    restart: always
+  celery-worker:
+    build:
+      target: prod
+    restart: always
+  flower:
+    build:
+      target: prod
+    restart: always

@@ -1,0 +1,99 @@
+name: Deploy Main
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-main
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install and start WireGuard
+        env:
+          WG_PRIVATE_KEY: ${{ secrets.WG_PRIVATE_KEY }}
+          WG_SERVER_PUBLIC_KEY: ${{ secrets.WG_SERVER_PUBLIC_KEY }}
+          WG_ENDPOINT: ${{ secrets.WG_ENDPOINT }}
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y wireguard
+
+          sudo install -d -m 700 /etc/wireguard
+          sudo tee /etc/wireguard/wg0.conf >/dev/null <<EOF
+          [Interface]
+          PrivateKey = ${WG_PRIVATE_KEY}
+          Address = 10.20.20.4/32
+
+          [Peer]
+          PublicKey = ${WG_SERVER_PUBLIC_KEY}
+          Endpoint = ${WG_ENDPOINT}
+          AllowedIPs = 10.20.20.0/24
+          PersistentKeepalive = 25
+          EOF
+          sudo chmod 600 /etc/wireguard/wg0.conf
+
+          sudo wg-quick up wg0
+          sleep 3
+          sudo wg
+          ping -c 2 10.20.20.1
+
+      - name: Setup SSH key and known_hosts
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -H 10.20.20.1 >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Write .env from secret
+        env:
+          PRODUCTION_ENV: ${{ secrets.PRODUCTION_ENV }}
+        run: |
+          printf '%s\n' "$PRODUCTION_ENV" > .env
+          chmod 600 .env
+
+      - name: Stream source and trigger deploy
+        env:
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+        run: |
+          # Pipe a gzipped tarball over SSH. The forced-command on the server
+          # reads stdin (tar -xzf -), then runs scripts/deploy.sh.
+          tar -czf - \
+            --exclude='./.claude' \
+            --exclude='./CLAUDE.md' \
+            --exclude='**/CLAUDE.md' \
+            --exclude='**/AGENTS.md' \
+            --exclude='./README.md' \
+            --exclude='./docs' \
+            --exclude='./.git' \
+            --exclude='./.github' \
+            --exclude='./node_modules' \
+            --exclude='**/node_modules' \
+            --exclude='./.next' \
+            --exclude='**/.next' \
+            --exclude='./apps/web/.next' \
+            --exclude='./backups' \
+            --exclude='./.env.prod' \
+            --exclude='./.env.example' \
+            --exclude='./*.disabled' \
+            --exclude='./docker-compose.dev.yml' \
+            --exclude='./database/docker-compose.db.dev.yml' \
+            -C . . \
+          | ssh -i ~/.ssh/id_ed25519 "${DEPLOY_USER}@10.20.20.1"
+
+      - name: Disconnect WireGuard
+        if: always()
+        run: sudo wg-quick down wg0 || true

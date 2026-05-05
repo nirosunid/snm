@@ -1,0 +1,38 @@
+include:
+  - database/docker-compose.db.dev.yml
+
+services:
+  web:
+    build:
+      target: dev
+    ports:
+      - "3000:3000"
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps/web/src:/app/src
+      - ./apps/web/next.config.mjs:/app/next.config.mjs
+      - ./apps/web/tsconfig.json:/app/tsconfig.json
+  agents:
+    build:
+      target: dev
+    ports:
+      - "8001:8001"
+    volumes:
+      - ./apps/agents/src:/app/src
+      - ./apps/agents/tests:/app/tests
+  celery-worker:
+    build:
+      target: dev
+    volumes:
+      - ./apps/agents/src:/app/src
+  flower:
+    build:
+      target: dev
+    ports:
+      - "5555:5555"
+    volumes:
+      - ./apps/agents/src:/app/src
+  rabbitmq:
+    ports:
+      - "15672:15672"
