@@ -12,6 +12,7 @@ services:
     volumes:
       - ./apps/web/src:/app/src
       - ./apps/web/next.config.mjs:/app/next.config.mjs
+      - ./apps/web/postcss.config.mjs:/app/postcss.config.mjs
       - ./apps/web/tsconfig.json:/app/tsconfig.json
   agents:
     build:

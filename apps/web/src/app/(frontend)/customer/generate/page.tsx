@@ -37,78 +37,45 @@ export default function GeneratePlaygroundPage() {
   }
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui",
-        padding: "3rem 2rem",
-        maxWidth: 880,
-        margin: "0 auto",
-      }}
-    >
-      <header style={{ marginBottom: "1.5rem" }}>
-        <h1 style={{ fontSize: "1.75rem", marginBottom: "0.25rem" }}>
-          Generate playground
-        </h1>
-        <p style={{ color: "#666", margin: 0 }}>
+    <main className="mx-auto max-w-[880px] px-8 py-12 font-sans">
+      <header className="mb-6">
+        <h1 className="mb-1 text-3xl font-semibold">Generate playground</h1>
+        <p className="m-0 text-neutral-500">
           Issue #2 tracer bullet — hardcoded brand brief, single LLM call,
           structured carousel draft. Real auth lands in Issue #3.
         </p>
       </header>
 
-      <label style={{ display: "block", marginBottom: "0.5rem", fontWeight: 500 }}>
+      <label className="mb-2 block font-medium">
         Topic
         <input
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
-          style={{
-            display: "block",
-            width: "100%",
-            marginTop: "0.25rem",
-            padding: "0.6rem 0.75rem",
-            fontSize: "1rem",
-            border: "1px solid #ccc",
-            borderRadius: 6,
-          }}
+          className="mt-1 block w-full rounded-md border border-neutral-300 px-3 py-2.5 text-base"
         />
       </label>
 
       <button
         onClick={onGenerate}
         disabled={loading || topic.trim().length < 3}
-        style={{
-          marginTop: "0.75rem",
-          padding: "0.6rem 1.25rem",
-          fontSize: "1rem",
-          background: loading ? "#999" : "#0F172A",
-          color: "white",
-          border: 0,
-          borderRadius: 6,
-          cursor: loading ? "wait" : "pointer",
-        }}
+        className={
+          "mt-3 rounded-md border-0 px-5 py-2.5 text-base text-white " +
+          (loading ? "cursor-wait bg-neutral-500" : "cursor-pointer bg-slate-900 hover:bg-slate-800") +
+          " disabled:cursor-not-allowed disabled:opacity-60"
+        }
       >
         {loading ? "Generating…" : "Generate"}
       </button>
 
       {error && (
-        <pre
-          style={{
-            marginTop: "1.5rem",
-            padding: "1rem",
-            background: "#FEF2F2",
-            color: "#7F1D1D",
-            border: "1px solid #FCA5A5",
-            borderRadius: 6,
-            whiteSpace: "pre-wrap",
-            wordBreak: "break-word",
-          }}
-        >
+        <pre className="mt-6 overflow-hidden rounded-md border border-red-300 bg-red-50 p-4 break-words whitespace-pre-wrap text-red-900">
           {error}
         </pre>
       )}
 
       {result && (
-        <section style={{ marginTop: "2rem" }}>
-          <h2 style={{ fontSize: "1.1rem", marginBottom: "0.5rem" }}>
+        <section className="mt-8">
+          <h2 className="mb-2 text-lg font-semibold">
             Draft for {result.brand} · {result.provider}/{result.model}
           </h2>
           {(() => {
@@ -126,66 +93,30 @@ export default function GeneratePlaygroundPage() {
                 onClick={onClick}
                 disabled={disabled}
                 aria-label={direction === "prev" ? "Previous slide" : "Next slide"}
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: "50%",
-                  border: "1px solid #E5E5E5",
-                  background: "white",
-                  fontSize: "1.25rem",
-                  cursor: disabled ? "not-allowed" : "pointer",
-                  opacity: disabled ? 0.4 : 1,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
+                className={
+                  "flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200 bg-white text-xl " +
+                  (disabled ? "cursor-not-allowed opacity-40" : "cursor-pointer hover:bg-neutral-50")
+                }
               >
                 {direction === "prev" ? "‹" : "›"}
               </button>
             );
             return (
-              <div style={{ margin: "1rem 0 1.5rem" }}>
-                <figure
-                  style={{
-                    margin: 0,
-                    maxWidth: 480,
-                    marginLeft: "auto",
-                    marginRight: "auto",
-                  }}
-                >
+              <div className="mt-4 mb-6">
+                <figure className="m-0 mx-auto max-w-[480px]">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
                   <img
                     src={src}
                     alt={`${slide.type} slide`}
-                    style={{
-                      display: "block",
-                      width: "100%",
-                      height: "auto",
-                      aspectRatio: "1 / 1",
-                      objectFit: "contain",
-                      borderRadius: 8,
-                      border: "1px solid #E5E5E5",
-                      background: "#FAFAFA",
-                    }}
+                    className="block aspect-square h-auto w-full rounded-lg border border-neutral-200 bg-neutral-50 object-contain"
                   />
-                  <figcaption
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginTop: "0.5rem",
-                      fontSize: "0.875rem",
-                      color: "#444",
-                    }}
-                  >
+                  <figcaption className="mt-2 flex items-center justify-between text-sm text-neutral-700">
                     {navBtn("prev", idx === 0, () =>
                       setSlideIdx((i) => Math.max(0, i - 1)),
                     )}
                     <span>
-                      <strong style={{ textTransform: "uppercase", marginRight: 8 }}>
-                        {slide.type}
-                      </strong>
-                      <span style={{ color: "#888" }}>
+                      <strong className="mr-2 uppercase">{slide.type}</strong>
+                      <span className="text-neutral-400">
                         {idx + 1} / {slides.length}
                       </span>
                     </span>
@@ -197,17 +128,17 @@ export default function GeneratePlaygroundPage() {
               </div>
             );
           })()}
-          <p style={{ marginTop: "1rem" }}>
+          <p className="mt-4">
             <strong>Caption:</strong> {result.draft.caption}
           </p>
           {result.draft.hashtags.length > 0 && (
-            <p style={{ color: "#0EA5E9" }}>
+            <p className="text-sky-500">
               {result.draft.hashtags.map((t) => `#${t.replace(/^#/, "")}`).join(" ")}
             </p>
           )}
-          <details style={{ marginTop: "1rem" }}>
-            <summary style={{ cursor: "pointer", color: "#666" }}>Raw JSON</summary>
-            <pre style={{ background: "#F5F5F5", padding: "1rem", borderRadius: 6, overflowX: "auto" }}>
+          <details className="mt-4">
+            <summary className="cursor-pointer text-neutral-500">Raw JSON</summary>
+            <pre className="overflow-x-auto rounded-md bg-neutral-100 p-4">
               {JSON.stringify(result, null, 2)}
             </pre>
           </details>

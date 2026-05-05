@@ -1,5 +1,7 @@
 import React from "react";
 
+import "./globals.css";
+
 export const metadata = {
   title: "SMN",
   description: "Social Media Manager — AI content agents for creators and SMBs.",

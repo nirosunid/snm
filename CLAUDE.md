@@ -50,7 +50,7 @@ Two rules, same spirit:
 1. **All `docker compose` invocations go through the wrappers.** Never run `docker compose -f docker-compose.yml -f docker-compose.{dev,prod}.yml ...` directly — neither in shell suggestions, in CI, nor in documentation. If a needed command isn't a subcommand yet, **add one to `scripts/dev.sh` and `scripts/prod.sh`** rather than reaching for raw `docker compose`. The only place raw `docker compose` lives is *inside* the script source files.
 2. **Build / install / lint / type-check / test commands run inside the containers, not on the host.** Use `./scripts/dev.sh exec web <cmd>` (e.g. `pnpm install`, `pnpm exec tsc --noEmit`, `pnpm lint`, `pnpm payload migrate`) and `./scripts/dev.sh exec agents <cmd>` for the Python service. Host Node/pnpm/Python versions, env, and network hostnames diverge from the containerized runtime — running on the host gives misleading green/red signals and can pollute `apps/web/node_modules` with host-resolved paths. The host's `pnpm`, `uv`, and `python3` should only be used for fast IDE-side diagnostics.
 
-> Gotcha: `apps/web`'s dev compose mounts only `src/`, `next.config.mjs`, and `tsconfig.json` from the host — `package.json` and `node_modules` are baked into the image. Adding a new dep means **rebuild** (`./scripts/dev.sh up web`), not just `pnpm install` inside the running container.
+> Gotcha: `apps/web`'s dev compose mounts only `src/`, `next.config.mjs`, `postcss.config.mjs`, and `tsconfig.json` from the host — `package.json` and `node_modules` are baked into the image. Adding a new dep means **rebuild** (`./scripts/dev.sh up web`), not just `pnpm install` inside the running container.
 
 ### Dev stack
 ```bash

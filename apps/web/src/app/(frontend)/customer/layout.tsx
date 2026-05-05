@@ -19,42 +19,24 @@ export default async function CustomerLayout({ children }: { children: React.Rea
 
   return (
     <>
-      <header
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "1rem",
-          padding: "0.75rem 1.5rem",
-          borderBottom: "1px solid #E5E5E5",
-          fontFamily: "system-ui",
-        }}
-      >
-        <nav style={{ display: "flex", alignItems: "center", gap: "1rem" }}>
-          <Link href={routes.customer.dashboard()} style={{ fontWeight: 600, color: "#0F172A" }}>
+      <header className="flex items-center justify-between gap-4 border-b border-neutral-200 px-6 py-3 font-sans">
+        <nav className="flex items-center gap-4">
+          <Link href={routes.customer.dashboard()} className="font-semibold text-slate-900">
             SMN
           </Link>
-          <Link href={routes.customer.dashboard()} style={{ color: "#444" }}>
+          <Link href={routes.customer.dashboard()} className="text-neutral-700 hover:text-slate-900">
             Dashboard
           </Link>
-          <Link href={routes.customer.generate()} style={{ color: "#444" }}>
+          <Link href={routes.customer.generate()} className="text-neutral-700 hover:text-slate-900">
             Generate
           </Link>
         </nav>
-        <div style={{ display: "flex", alignItems: "center", gap: "0.75rem", fontSize: "0.9rem" }}>
-          <span style={{ color: "#666" }}>{user.email}</span>
+        <div className="flex items-center gap-3 text-sm">
+          <span className="text-neutral-500">{user.email}</span>
           <form action={signOut}>
             <button
               type="submit"
-              style={{
-                padding: "0.4rem 0.75rem",
-                fontSize: "0.85rem",
-                background: "white",
-                color: "#0F172A",
-                border: "1px solid #E5E5E5",
-                borderRadius: 6,
-                cursor: "pointer",
-              }}
+              className="cursor-pointer rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-slate-900 hover:bg-neutral-50"
             >
               Sign out
             </button>

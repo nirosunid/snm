@@ -11,58 +11,37 @@ export default async function DashboardPage() {
   if (!user) return null;
 
   return (
-    <main
-      style={{
-        fontFamily: "system-ui",
-        padding: "3rem 1.5rem",
-        maxWidth: 720,
-        margin: "0 auto",
-      }}
-    >
-      <h1 style={{ fontSize: "1.75rem", marginBottom: "0.25rem" }}>
+    <main className="mx-auto max-w-[720px] px-6 py-12 font-sans">
+      <h1 className="mb-1 text-3xl font-semibold">
         Welcome{user.email ? `, ${user.email.split("@")[0]}` : ""}
       </h1>
-      <p style={{ color: "#666", margin: "0 0 2rem" }}>
+      <p className="mt-0 mb-8 text-neutral-500">
         {isStaff(user)
           ? `Signed in as ${user.role}.`
           : "You're all set up. Here's what's next."}
       </p>
 
-      <section
-        style={{
-          padding: "2rem",
-          border: "1px dashed #D4D4D4",
-          borderRadius: 12,
-          background: "#FAFAFA",
-        }}
-      >
-        <h2 style={{ fontSize: "1.1rem", marginTop: 0, marginBottom: "0.5rem" }}>
+      <section className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8">
+        <h2 className="mt-0 mb-2 text-lg font-semibold">
           You don&apos;t have any brands yet
         </h2>
-        <p style={{ color: "#555", margin: "0 0 1.25rem" }}>
+        <p className="mt-0 mb-5 text-neutral-600">
           Brands hold the voice, palette, and assets your AI agents draft against.
           You can spin up a draft right now using the playground brief while we
           build out brand creation.
         </p>
         <Link
           href={routes.customer.generate()}
-          style={{
-            display: "inline-block",
-            padding: "0.6rem 1rem",
-            background: "#0F172A",
-            color: "white",
-            borderRadius: 6,
-            textDecoration: "none",
-          }}
+          className="inline-block rounded-md bg-slate-900 px-4 py-2.5 text-white no-underline hover:bg-slate-800"
         >
           Open the generate playground →
         </Link>
       </section>
 
       {isStaff(user) && (
-        <p style={{ marginTop: "2rem", fontSize: "0.9rem", color: "#666" }}>
+        <p className="mt-8 text-sm text-neutral-500">
           Operational tools live in the{" "}
-          <Link href={routes.admin()} style={{ color: "#0F172A" }}>
+          <Link href={routes.admin()} className="text-slate-900 underline">
             Payload admin
           </Link>
           .
