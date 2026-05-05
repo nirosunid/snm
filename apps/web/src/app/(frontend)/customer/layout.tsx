@@ -1,7 +1,10 @@
-import Link from "next/link";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 
+import { BrandHeader } from "@/components/customer/brand-header";
+import { BrandSidebar } from "@/components/customer/brand-sidebar";
+import { SidebarProvider } from "@/components/ui/sidebar";
+import { Toaster } from "@/components/ui/sonner";
 import { signOut } from "@/lib/auth/actions";
 import { currentUser } from "@/lib/auth/session";
 import { routes } from "@/lib/routes";
@@ -18,32 +21,13 @@ export default async function CustomerLayout({ children }: { children: React.Rea
   }
 
   return (
-    <>
-      <header className="flex items-center justify-between gap-4 border-b border-neutral-200 px-6 py-3 font-sans">
-        <nav className="flex items-center gap-4">
-          <Link href={routes.customer.dashboard()} className="font-semibold text-slate-900">
-            SMN
-          </Link>
-          <Link href={routes.customer.dashboard()} className="text-neutral-700 hover:text-slate-900">
-            Dashboard
-          </Link>
-          <Link href={routes.customer.generate()} className="text-neutral-700 hover:text-slate-900">
-            Generate
-          </Link>
-        </nav>
-        <div className="flex items-center gap-3 text-sm">
-          <span className="text-neutral-500">{user.email}</span>
-          <form action={signOut}>
-            <button
-              type="submit"
-              className="cursor-pointer rounded-md border border-neutral-200 bg-white px-3 py-1.5 text-sm text-slate-900 hover:bg-neutral-50"
-            >
-              Sign out
-            </button>
-          </form>
-        </div>
-      </header>
-      {children}
-    </>
+    <SidebarProvider>
+      <BrandHeader userEmail={user.email} signOutAction={signOut} />
+      <BrandSidebar />
+      <main className="mt-16 flex w-full justify-center">
+        <div className="container px-4 py-8 md:px-6 md:py-12">{children}</div>
+      </main>
+      <Toaster />
+    </SidebarProvider>
   );
 }

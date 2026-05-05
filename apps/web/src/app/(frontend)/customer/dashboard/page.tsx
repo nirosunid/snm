@@ -1,5 +1,15 @@
+import { ArrowRight } from "lucide-react";
 import Link from "next/link";
 
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { currentUser, isStaff } from "@/lib/auth/session";
 import { routes } from "@/lib/routes";
 
@@ -11,42 +21,48 @@ export default async function DashboardPage() {
   if (!user) return null;
 
   return (
-    <main className="mx-auto max-w-[720px] px-6 py-12 font-sans">
-      <h1 className="mb-1 text-3xl font-semibold">
-        Welcome{user.email ? `, ${user.email.split("@")[0]}` : ""}
-      </h1>
-      <p className="mt-0 mb-8 text-neutral-500">
-        {isStaff(user)
-          ? `Signed in as ${user.role}.`
-          : "You're all set up. Here's what's next."}
-      </p>
-
-      <section className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-8">
-        <h2 className="mt-0 mb-2 text-lg font-semibold">
-          You don&apos;t have any brands yet
-        </h2>
-        <p className="mt-0 mb-5 text-neutral-600">
-          Brands hold the voice, palette, and assets your AI agents draft against.
-          You can spin up a draft right now using the playground brief while we
-          build out brand creation.
+    <div className="mx-auto max-w-3xl space-y-8">
+      <div>
+        <h1 className="text-3xl font-semibold tracking-tight">
+          Welcome{user.email ? `, ${user.email.split("@")[0]}` : ""}
+        </h1>
+        <p className="mt-1 text-muted-foreground">
+          {isStaff(user)
+            ? `Signed in as ${user.role}.`
+            : "You're all set up. Here's what's next."}
         </p>
-        <Link
-          href={routes.customer.generate()}
-          className="inline-block rounded-md bg-slate-900 px-4 py-2.5 text-white no-underline hover:bg-slate-800"
-        >
-          Open the generate playground →
-        </Link>
-      </section>
+      </div>
+
+      <Card className="border-dashed">
+        <CardHeader>
+          <CardTitle>You don&apos;t have any brands yet</CardTitle>
+          <CardDescription>
+            Brands hold the voice, palette, and assets your AI agents draft against.
+            You can spin up a draft right now using the playground brief while we
+            build out brand creation.
+          </CardDescription>
+        </CardHeader>
+        <CardFooter>
+          <Button asChild>
+            <Link href={routes.customer.generate()}>
+              Open the generate playground
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+        </CardFooter>
+      </Card>
 
       {isStaff(user) && (
-        <p className="mt-8 text-sm text-neutral-500">
-          Operational tools live in the{" "}
-          <Link href={routes.admin()} className="text-slate-900 underline">
-            Payload admin
-          </Link>
-          .
-        </p>
+        <Card>
+          <CardContent className="text-sm text-muted-foreground">
+            Operational tools live in the{" "}
+            <Link href={routes.admin()} className="font-medium text-foreground underline-offset-4 hover:underline">
+              Payload admin
+            </Link>
+            .
+          </CardContent>
+        </Card>
       )}
-    </main>
+    </div>
   );
 }
