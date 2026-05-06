@@ -28,15 +28,18 @@ const PROVIDER_ALIASES: Record<string, LLMConfig["provider"]> = {
 };
 
 export function resolveConfig(stage?: string): LLMConfig {
-  const defaultProvider = process.env.DEFAULT_LLM_PROVIDER ?? "ollama";
-  const defaultModel = process.env.DEFAULT_LLM_MODEL ?? "llama3.2";
+  // Treat empty strings as "not set" — docker-compose's `${VAR:-}` syntax
+  // exports vars as "" when not in .env, and `??` only falls back on
+  // null/undefined. `||` covers both cases.
+  const defaultProvider = process.env.DEFAULT_LLM_PROVIDER || "ollama";
+  const defaultModel = process.env.DEFAULT_LLM_MODEL || "llama3.2";
 
   let providerRaw: string;
   let model: string;
   if (stage) {
     const upper = stage.toUpperCase();
-    providerRaw = process.env[`LLM_${upper}_PROVIDER`] ?? defaultProvider;
-    model = process.env[`LLM_${upper}_MODEL`] ?? defaultModel;
+    providerRaw = process.env[`LLM_${upper}_PROVIDER`] || defaultProvider;
+    model = process.env[`LLM_${upper}_MODEL`] || defaultModel;
   } else {
     providerRaw = defaultProvider;
     model = defaultModel;

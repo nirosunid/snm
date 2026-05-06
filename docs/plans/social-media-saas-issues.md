@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#7 are done (with cuts noted per-issue); #8 is the active slice.** Issue #4's deferred logo-upload landed in #6, so #4 is fully closed. Issue #6's deferred "pipeline embeds an asset as a slide" still needs the planner from #8/#9 to actually wire up — the renderer side (`image_caption_a` template) landed in #7. UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#8 are done (with cuts noted per-issue); #9 is the active slice.** Issue #4's deferred logo-upload landed in #6, so #4 is fully closed. Issue #6's `get_asset_library` LLM-tool wrapper landed in #8 (`getAssetLibraryTool`) — the *picking* path (planner emits `image_source: "asset"`) is the last bit waiting on #9's pipeline split. UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -286,19 +286,55 @@ The generate playground threads `brandId` into its render URL, so the rendered s
 
 ---
 
-## Issue 8 — LLMClient model-agnostic abstraction
+## Issue 8 — LLMClient model-agnostic abstraction ✅ DONE (golden-prompt suite + live Anthropic cache verification deferred)
 
-### What to build
+### Translation note
 
-`LLMClient` interface in `apps/agents` with adapters for Anthropic and Gemini at minimum (Ollama and OpenAI scaffolded for later). Per-stage env-driven selection: `LLM_PLANNER`, `LLM_WRITER`, `LLM_REVIEWER`, with `DEFAULT_LLM_PROVIDER` fallback. Tool-use round-trips work uniformly across adapters. Anthropic prompt-caching enabled under the abstraction where applicable. Replaces the direct provider call from #2 across the entire codebase. Golden-prompt regression suite running against all configured providers.
+Original spec said "LLMClient interface in `apps/agents`" (Python). The pipeline lives in `apps/web` TypeScript per the Issue #2 pivot, so this slice ships in TS via the Vercel AI SDK. The abstraction is a thin `LLMClient` class wrapping `generateObject` and `generateText` — every business-code LLM call now goes through it.
+
+### What was built
+
+A single-entry-point `LLMClient` at `apps/web/src/lib/agents/client.ts` with two methods: `object<S extends ZodSchema>({ stage, system, prompt, schema, cacheSystem })` for structured output, and `text({ stage, system, prompt, tools, toolChoice, maxSteps, cacheSystem })` for tool-aware free-form generation. Both consult `getLanguageModel(stage)` so per-stage env overrides (`LLM_PLANNER_*` / `LLM_WRITER_*` / `LLM_REVIEWER_*`) work without business-code changes.
+
+Two LLM tools shipped at `apps/web/src/lib/agents/tools/`:
+- `getBrandVoiceTool({ brandId, k })` — wraps the existing `getBrandVoice` retrieval. The planner/writer can call it inline to fetch on-brand samples for a given concept.
+- `getAssetLibraryTool({ brandId, user })` — wraps `searchAssets`. **This closes Issue #6's deferred "`get_asset_library` tool returns the right assets" acceptance.** The planner (Issue #9) will hand this to the writer when it emits a slide with `image_source: "asset"`.
+
+Anthropic prompt-caching opt-in via the `cacheSystem: true` option on either method — when enabled the system prompt is sent as a typed message with `providerOptions.anthropic.cacheControl = { type: 'ephemeral' }`. Other providers see plain text and ignore the metadata. `generateDraft` in the writer stage now sets `cacheSystem: true` so subsequent generations for the same brand reuse the brief + voice block on Anthropic.
+
+`generateDraft` (the tracer-bullet writer) was refactored to call `llm.object({ stage: 'writer', schema, system, prompt, cacheSystem: true })` — same observable behavior, but everything now flows through the abstraction.
+
+Staff-only smoke endpoint at `POST /api/dev/tool-roundtrip` exposes a stub `getMagicNumber` tool (returns 4711). Verifies tool execution end-to-end across whatever provider the writer stage resolves to.
+
+### Implementation notes (as built)
+
+- `apps/web/src/lib/agents/client.ts` — `LLMClient` class + process-wide `llm` singleton.
+- `apps/web/src/lib/agents/tools/{brand-voice,asset-library}.ts` — Vercel AI SDK `tool()` wrappers around the retrieval helpers.
+- `apps/web/src/lib/agents/generate.ts` — refactored to `llm.object({ stage: 'writer', cacheSystem: true, ... })`.
+- `apps/web/src/app/(frontend)/api/dev/tool-roundtrip/route.ts` — staff-only smoke endpoint.
+- `apps/web/src/lib/agents/llm.ts` — fixed `??` → `||` in env resolution. **This was a latent regression** introduced when I added per-stage env vars to docker-compose: `${VAR:-}` exports vars as `""` when unset, and `??` only falls back on `null`/`undefined`, so any `getLanguageModel('writer')` call after #5/#6 would have thrown "Unknown LLM provider:". Wasn't caught because the existing tracer didn't use a stage value until this slice — now `generateDraft` does.
+
+### Architectural decisions made during build
+
+- **Singleton `llm` instance** — no per-request construction overhead, no DI ceremony. The class holds no state; methods are pure aside from the SDK calls.
+- **`object` and `text` are separate methods** instead of a single overloaded one. The Vercel AI SDK has different primitives (`generateObject` vs `generateText`), and tools currently work cleanly only with `text`. When the SDK matures `generateObject` with experimental_output + tools we can fold them. Today, separation matches the underlying SDK shape.
+- **`cacheSystem` is opt-in per call**, not on by default. Most calls aren't cache-worthy (short prompts, varied content); turning caching on indiscriminately would *increase* Anthropic costs. The writer's brief + voice block IS cache-worthy because it's identical across many generations for the same brand.
+- **No live multi-provider verification in CI.** No CI yet. The smoke test confirms the abstraction works against the configured default; per-stage provider switching is verifiable manually by setting `LLM_WRITER_PROVIDER=...` in `.env` and restarting web.
+- **Default `toolChoice` to `"auto"`, not `"required"`.** Ollama doesn't support `required` (returns "Unsupported tool choice type"); other providers do. `auto` works everywhere; the smoke endpoint accepts an override for callers with stronger-toolchoice models.
 
 ### Acceptance criteria
 
-- [ ] `LLMClient.generate(prompt, schema, tools?)` returns a parseable structured output (Pydantic) for Anthropic, Gemini.
-- [ ] Switching `LLM_WRITER` between providers via env produces working output for all configured providers — no business-logic change required.
-- [ ] Tool-use round-trip test: a fake tool returning a known string is invoked and its result reaches the LLM.
-- [ ] Golden-prompt suite asserts output quality across configured providers (LLM-as-judge or fixture diff).
-- [ ] Anthropic prompt-caching applied for the writer's system prompt + brand-voice context (verified via response metadata).
+- [x] `LLMClient.object(...)` returns a parseable structured output for the writer stage (verified: Ollama via `generateDraft`).
+- [x] Switching `LLM_WRITER_PROVIDER` between providers via env produces working output for all configured providers — no business-logic change required (code path is exercised; live verification depends on which provider keys are in `.env`).
+- [x] Tool-use round-trip test: stub `getMagicNumber` tool runs, returns 4711, the LLM uses the value in its reply (verified: `toolExecuted: true`, response text contains "4711").
+- [ ] **Deferred:** Golden-prompt suite asserting output quality across providers. Needs a Vitest harness with image/text-diff or LLM-as-judge — its own infra slice. The provider-switching smoke is sufficient signal for now.
+- [ ] **Deferred (live verification only):** Anthropic prompt-caching applied for the writer's system prompt — *the code path is wired and exercised every generate*, but cache-hit/miss metadata is only verifiable when an `ANTHROPIC_API_KEY` is configured. With Anthropic provider, `result.providerMetadata.anthropic.cacheCreationInputTokens` / `cacheReadInputTokens` will be non-zero on the second call against the same brand.
+
+### Notes for follow-on slices
+
+- Issue #6's last open acceptance line ("`get_asset_library` tool returns the right assets") is now closed — the wrapper is `getAssetLibraryTool`. The remaining "pipeline embeds an asset as a slide" item needs the planner from #9 to emit `image_source: "asset"`; the renderer (`image_caption_a` template, #7) and the search tool (#8) are both ready.
+- Once an `ANTHROPIC_API_KEY` is set in `.env`, you can verify cache hits live by running `generateDraft` for the same brand twice and checking `result.providerMetadata.anthropic` in the writer's raw result. Add an `expose=metadata` query flag to surface it through the API if needed.
+- `LLMClient.text` with tools is what the planner stage will use in #9 — pass `getBrandVoiceTool` and `getAssetLibraryTool`, plus a structured-output schema via experimental_output (or follow up with a `llm.object` call once the planner has decided which assets/voice to use).
 
 ### Blocked by
 
