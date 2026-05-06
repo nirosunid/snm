@@ -7,8 +7,10 @@ import { lexicalEditor } from "@payloadcms/richtext-lexical";
 import { Assets } from "./collections/Assets";
 import { Brands } from "./collections/Brands";
 import { Media } from "./collections/Media";
+import { Templates } from "./collections/Templates";
 import { Users } from "./collections/Users";
 import { VoiceSamples } from "./collections/VoiceSamples";
+import { seedTemplates } from "./render/templates/seed";
 
 const filename = fileURLToPath(import.meta.url);
 const dirname = path.dirname(filename);
@@ -21,7 +23,10 @@ export default buildConfig({
     },
   },
   editor: lexicalEditor(),
-  collections: [Users, Media, Brands, VoiceSamples, Assets],
+  collections: [Users, Media, Brands, VoiceSamples, Assets, Templates],
+  onInit: async (payload) => {
+    await seedTemplates(payload);
+  },
   secret: process.env.PAYLOAD_SECRET || "",
   typescript: {
     outputFile: path.resolve(dirname, "payload-types.ts"),

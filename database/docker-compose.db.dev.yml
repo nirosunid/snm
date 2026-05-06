@@ -1,4 +1,8 @@
 services:
   postgres:
     ports:
-      - "5432:5432"
+      # Host port 5433 (not 5432) so smn dev can coexist with the products
+      # project's postgres on the same machine. Inside the compose network,
+      # services still reach postgres on its container port 5432 — no other
+      # change needed.
+      - "5433:5432"

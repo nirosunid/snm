@@ -59,10 +59,22 @@ export const routes = {
   api: {
     customer: {
       generate: (): string => `${API_CUSTOMER_PREFIX}/generate`,
-      render: (params: { type: string; copy: string }): string =>
-        withQuery(`${API_CUSTOMER_PREFIX}/render`, params),
+      render: (params: {
+        type?: string;
+        templateKey?: string;
+        copy?: string;
+        imageUrl?: string;
+        caption?: string;
+        attribution?: string;
+        brandId?: number | string;
+      }): string => withQuery(`${API_CUSTOMER_PREFIX}/render`, params),
       voiceSamples: (): string => `${API_CUSTOMER_PREFIX}/voice-samples`,
     },
+  },
+
+  // Dev-only surface (staff-gated)
+  dev: {
+    templates: (): string => "/dev/templates",
   },
 
   // Payload-owned (don't change — referenced for grep + a future rename guard)

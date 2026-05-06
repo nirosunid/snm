@@ -146,7 +146,12 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
         const slides = result.draft.slides;
         const idx = Math.min(slideIdx, slides.length - 1);
         const slide = slides[idx];
-        const src = routes.api.customer.render({ type: slide.type, copy: slide.copy });
+        const src = routes.api.customer.render({
+          type: slide.type,
+          copy: slide.copy,
+          brandId:
+            brandValue !== PLAYGROUND_BRAND_VALUE ? brandValue : undefined,
+        });
         return (
           <Card>
             <CardHeader>

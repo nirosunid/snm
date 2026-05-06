@@ -1,110 +1,108 @@
 import { ImageResponse } from "next/og";
+import { getPayload } from "payload";
+
+import config from "@payload-config";
 
 import { HARDCODED_BRAND } from "@/lib/agents/brand";
-import { SlideSchema } from "@/lib/agents/schemas";
+import { currentUser } from "@/lib/auth/session";
+import { parseFixtureBrandId } from "@/render/fixtures";
+import { findTemplateByType, getTemplate } from "@/render/templates";
+import { SLIDE_SIZE, withDefaults } from "@/render/templates/_shared";
+import type { RenderBrand, RenderProps } from "@/render/templates";
 
-export const runtime = "edge";
-
-const SIZE = 1080;
+// nodejs runtime so we can call Payload Local API for brand + media reads.
+// next/og's ImageResponse runs fine in node — Satori is the same library.
+export const runtime = "nodejs";
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const parsed = SlideSchema.safeParse({
-    type: url.searchParams.get("type"),
-    copy: url.searchParams.get("copy") ?? "",
-  });
-  if (!parsed.success) {
-    return new Response(JSON.stringify({ error: parsed.error.flatten() }), {
-      status: 400,
-      headers: { "content-type": "application/json" },
-    });
+  const templateKey = url.searchParams.get("templateKey") ?? "";
+  const slideType = url.searchParams.get("type") ?? "";
+  const copy = url.searchParams.get("copy") ?? "";
+  const imageUrl = url.searchParams.get("imageUrl") ?? "";
+  const caption = url.searchParams.get("caption") ?? "";
+  const attribution = url.searchParams.get("attribution") ?? "";
+  const brandIdRaw = url.searchParams.get("brandId");
+
+  const template = templateKey
+    ? getTemplate(templateKey)
+    : slideType
+      ? findTemplateByType(
+          slideType as Parameters<typeof findTemplateByType>[0],
+        )
+      : undefined;
+
+  if (!template) {
+    return new Response(
+      JSON.stringify({
+        error: templateKey
+          ? `Unknown templateKey: ${templateKey}`
+          : `Unknown slide type: ${slideType}`,
+      }),
+      { status: 400, headers: { "content-type": "application/json" } },
+    );
   }
-  const slide = parsed.data;
 
-  const brand = HARDCODED_BRAND;
-  const palette = {
-    background: brand.palette.background ?? "#F4F4F4",
-    text: brand.palette.text ?? "#0F1419",
-    primary: brand.palette.primary ?? "#0F1419",
-    accent: brand.palette.accent ?? "#7A8A9A",
-  };
-  const label =
-    slide.type === "hook"
-      ? "HOOK"
-      : slide.type === "listicle_item"
-        ? "TIP"
-        : "CTA";
-  const bodyFontSize =
-    slide.type === "hook" ? 76 : slide.type === "listicle_item" ? 56 : 84;
+  const props: RenderProps = { copy, imageUrl, caption, attribution };
+  const brand = await loadBrand(brandIdRaw);
 
-  return new ImageResponse(
-    (
-      <div
-        style={{
-          width: "100%",
-          height: "100%",
-          display: "flex",
-          flexDirection: "column",
-          justifyContent: "space-between",
-          padding: "80px",
-          background: palette.background,
-          color: palette.text,
-          fontFamily: "system-ui, sans-serif",
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 16,
-            fontSize: 28,
-            fontWeight: 700,
-            letterSpacing: "0.12em",
-            color: palette.accent,
-          }}
-        >
-          <span
-            style={{
-              display: "flex",
-              width: 28,
-              height: 6,
-              background: palette.accent,
-              borderRadius: 3,
-            }}
-          />
-          {label}
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            fontSize: bodyFontSize,
-            fontWeight: 700,
-            lineHeight: 1.1,
-            color: palette.primary,
-          }}
-        >
-          {slide.copy}
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            fontSize: 24,
-            color: palette.text,
-            opacity: 0.7,
-          }}
-        >
-          <span style={{ fontWeight: 700 }}>{brand.name}</span>
-          <span>{slide.type}</span>
-        </div>
-      </div>
-    ),
-    {
-      width: SIZE,
-      height: SIZE,
-    },
-  );
+  return new ImageResponse(template.render({ brand, props }), {
+    width: SLIDE_SIZE,
+    height: SLIDE_SIZE,
+  });
 }
+
+async function loadBrand(brandIdRaw: string | null): Promise<RenderBrand> {
+  // Dev fixtures: brandId=fixture:<key> bypasses the brands collection
+  // entirely. Anonymously-callable so /dev/templates can render previews
+  // without an extra auth round-trip.
+  const fixture = parseFixtureBrandId(brandIdRaw);
+  if (fixture) return withDefaults(fixture);
+
+  const brandId = brandIdRaw ? Number(brandIdRaw) : undefined;
+  if (!brandId || !Number.isInteger(brandId) || brandId <= 0) {
+    return withDefaults(HARDCODED_BRAND_AS_RENDER);
+  }
+  const user = await currentUser();
+  if (!user) return withDefaults(HARDCODED_BRAND_AS_RENDER);
+  const payload = await getPayload({ config });
+  try {
+    const record = await payload.findByID({
+      collection: "brands",
+      id: brandId,
+      user,
+      overrideAccess: false,
+      depth: 1,
+    });
+    const logo =
+      typeof record.logo === "object" && record.logo
+        ? record.logo
+        : null;
+    return withDefaults({
+      name: record.name,
+      font: record.font ?? "Inter",
+      palette: {
+        primary: record.palette?.primary ?? "",
+        secondary: record.palette?.secondary ?? "",
+        accent: record.palette?.accent ?? "",
+        background: record.palette?.background ?? "",
+        text: record.palette?.text ?? "",
+      } as RenderBrand["palette"],
+      logoUrl: logo?.url ?? null,
+    });
+  } catch {
+    return withDefaults(HARDCODED_BRAND_AS_RENDER);
+  }
+}
+
+const HARDCODED_BRAND_AS_RENDER: Partial<RenderBrand> = {
+  name: HARDCODED_BRAND.name,
+  font: "Inter",
+  palette: {
+    primary: HARDCODED_BRAND.palette.primary ?? "",
+    secondary: HARDCODED_BRAND.palette.secondary ?? "",
+    accent: HARDCODED_BRAND.palette.accent ?? "",
+    background: HARDCODED_BRAND.palette.background ?? "",
+    text: HARDCODED_BRAND.palette.text ?? "",
+  } as RenderBrand["palette"],
+};

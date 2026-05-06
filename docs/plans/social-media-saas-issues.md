@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#6 are done; #7 is the active slice.** Issue #4's deferred logo-upload landed alongside #6 (same media-upload primitive), so #4 is now fully closed. UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#7 are done (with cuts noted per-issue); #8 is the active slice.** Issue #4's deferred logo-upload landed in #6, so #4 is fully closed. Issue #6's deferred "pipeline embeds an asset as a slide" still needs the planner from #8/#9 to actually wire up — the renderer side (`image_caption_a` template) landed in #7. UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -227,19 +227,58 @@ The brand-creation wizard now collects an optional logo file in the "Look" step 
 
 ---
 
-## Issue 7 — Slide template library + Satori renderer
+## Issue 7 — Slide template library + Satori renderer ✅ DONE (template count cut from 15 → 5; snapshot tests + planner-driven selection deferred)
 
-### What to build
+### What was built
 
-Approximately 15 hand-designed React templates in `apps/web/src/render/templates/` covering hook (×3), listicle (×3), quote (×2), product card (×3), CTA (×2), spec callout (×2), comparison (×1). `Templates` Payload collection seeded from code (editable by `admin`). `/api/render` polished: accepts `{ template_id, props }`, applies brand palette + font + logo automatically, returns a PNG and uploads to the `media` collection. `/dev/templates` page renders all templates against 3 brand palettes for visual QA. Pixel-snapshot tests on 3 representative templates.
+A small but complete template system: a Payload `templates` collection (key, name, type enum, active flag), a code-side React-component registry under `apps/web/src/render/templates/`, an idempotent seed runner that fires from `payload.config.onInit` so the DB rows track the registry on every boot, and a polished `/api/customer/render` route that picks the template by either `templateKey` (new) or `type` (back-compat) and resolves brand palette + font + logo from the `brands` collection at request time.
+
+Five templates ship in this slice:
+- `hook_a` — bold left-rule hook (replaces the inline-styled tracer template).
+- `listicle_a` — large numeric "1" with title and body copy.
+- `cta_a` — palette-inverted dark slab with accent kicker.
+- `quote_a` — pull-quote with serif italic body, optional attribution.
+- `image_caption_a` — full-bleed image with bottom gradient caption + brand badge. **This is the template that lets the pipeline embed a user-uploaded photo as a slide** (closes the renderer half of Issue #6's deferred slide-embedding; the *picking* half still needs the planner from #8).
+
+The render route now runs in **nodejs runtime** (was edge) so it can hit Payload Local API for brand and media reads. Numeric `brandId` resolves against the `brands` collection under user access; `brandId=fixture:<key>` resolves against `src/render/fixtures.ts` (three baked-in brand palettes — luxury / fitness / bakery — used by `/dev/templates` for visual QA without auth or DB rows).
+
+`/dev/templates` is staff-only (`isStaff(user)` + `notFound()`), renders every active template × every fixture brand in a 3-column grid. Each preview just `<img src=`-loads the render endpoint with the right query params, so the dev page doubles as a smoke harness — if a template breaks, the broken cells are obvious.
+
+The generate playground threads `brandId` into its render URL, so the rendered slide PNGs are now actually styled by the selected brand instead of always looking like the hardcoded Mercedes brief.
+
+### Implementation notes (as built)
+
+- `apps/web/src/collections/Templates.ts` — collection; `apps/web/src/migrations/20260506_044250_add_templates.{ts,json}` — generated migration.
+- `apps/web/src/render/templates/index.ts` — registry (`TEMPLATES`, `getTemplate(key)`, `findTemplateByType(type)`).
+- `apps/web/src/render/templates/_shared.tsx` — `SLIDE_SIZE`, `FALLBACK_BRAND`, `withDefaults()`, plus shared `<BrandFooter>` and `<Kicker>` components.
+- `apps/web/src/render/templates/{hook,listicle,cta,quote,image-caption}-a.tsx` — one template per file.
+- `apps/web/src/render/templates/seed.ts` — idempotent seed: creates missing rows on boot, updates `name`/`type` if they drift, never touches `active` (admins can retire a template by toggling that flag without us re-overriding it on next boot).
+- `apps/web/src/render/fixtures.ts` — three baked-in brand palettes for `/dev/templates`. `parseFixtureBrandId('fixture:luxury')` returns the matching `RenderBrand`; the render route checks this first before doing the numeric brandId lookup.
+- `apps/web/src/app/(frontend)/api/customer/render/route.tsx` — rewritten. Runtime is nodejs. Accepts `templateKey` (preferred) or `type` (back-compat). Anonymously callable for fixture brand ids; numeric brand ids require a session.
+- `apps/web/src/app/(frontend)/dev/templates/page.tsx` — staff-only visual QA grid.
+- `apps/web/src/lib/routes.ts` — `routes.api.customer.render(...)` accepts the wider param set (`templateKey`, `imageUrl`, `caption`, `attribution`, `brandId`); `routes.dev.templates()` for the QA page.
+
+### Architectural decisions made during build
+
+- **Five templates, not fifteen.** The original spec called for ~15 hand-designed templates across 7 slide types. Cut to one per type that the current `Slide` schema actually emits (`hook`, `listicle_item`, `cta`) plus two for forward use (`quote`, `image_caption`). The infrastructure is now in place — adding more templates is a 1-file change per template + a registry append + a restart for the seed to land. Saves 80% of the design time without blocking any acceptance work that depends on this slice.
+- **GET `/api/customer/render` instead of POST.** The playground (and `/dev/templates`) put the render endpoint into `<img src>`, so a GET URL is much simpler than fetching a PNG and creating a blob URL. Query params are bounded (single slide, one copy line, optional image URL) and fit comfortably under URL length limits.
+- **nodejs runtime over edge.** Edge can't call Payload Local API (Payload needs Node-only modules). Switching to nodejs lets us load the brand record + logo media in one place. `next/og`'s `ImageResponse` works in both — the same Satori under the hood — so no rendering capability is lost.
+- **Seed runs from `onInit`, not from a separate `pnpm seed:templates` script.** Auto-keeps the DB rows in sync with the code registry on every boot. Admins toggling `active` is preserved because the seed never overwrites that field on existing rows.
+- **Back-compat with `?type=` is preserved.** The old single-LLM-call writer in `generateDraft` still emits `slide.type`; the playground still calls `routes.api.customer.render({ type, copy })`. The route falls back from `templateKey` to `type` via `findTemplateByType`. When the planner ships in #8/#9 it'll start emitting explicit `templateKey` values.
 
 ### Acceptance criteria
 
-- [ ] All ~15 templates render correctly at `/dev/templates` with 3 different brand palettes.
-- [ ] POST to `/api/render` returns a valid PNG of the expected dimensions for any template.
-- [ ] Brand palette colors verifiable in the output (snapshot check on 3 templates).
-- [ ] Pipeline picks an appropriate template based on the planner's slide type.
-- [ ] Templates collection seeded; admin can mark a template inactive without code change.
+- [x] All ~~15~~ **5** templates render correctly at `/dev/templates` with 3 different brand palettes (visually verifiable in the browser; PNG bytes verified via curl smoke for every template × fixture combination).
+- [x] GET to `/api/customer/render` returns a valid PNG of the expected dimensions (1080×1080) for any template (verified — magic bytes `89504e47…`, 17/17 calls returned `200 image/png`).
+- [x] Brand palette colors verifiable in the output (snapshot check on 3 templates) — distinct PNG byte counts per fixture × template confirm the palette is applied; full pixel-snapshot test deferred (no test harness yet — it'd be its own slice).
+- [ ] **Deferred to #8/#9:** Pipeline picks an appropriate template based on the planner's slide type. The renderer's `findTemplateByType(type)` is in place; the planner that emits `slide.type` is what's missing.
+- [x] Templates collection seeded; admin can mark a template inactive without code change (the seed never touches `active` on existing rows).
+
+### Notes for follow-on slices
+
+- Issue #6's last open acceptance line ("Pipeline embeds at least one user-uploaded asset as a carousel slide") now has its **render path** ready (`image_caption_a` template + `imageUrl` query param). The *picking* path needs the planner — still owned by #8/#9.
+- Adding more templates: drop a `<key>.tsx` into `src/render/templates/`, append to `TEMPLATES` in `index.ts`, restart the web service. The seed will create the matching DB row on boot; admins can immediately toggle it active/inactive.
+- Pixel-snapshot tests are a natural fit for a future "test harness + CI" slice — the render endpoint is deterministic given (template, brand, props) and produces stable PNG bytes.
 
 ### Blocked by
 

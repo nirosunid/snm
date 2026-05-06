@@ -2,6 +2,7 @@ import * as migration_20260505_123044_add_user_role from './20260505_123044_add_
 import * as migration_20260505_150409_add_brands from './20260505_150409_add_brands';
 import * as migration_20260505_155858_add_voice_samples from './20260505_155858_add_voice_samples';
 import * as migration_20260505_204619_add_assets from './20260505_204619_add_assets';
+import * as migration_20260506_044250_add_templates from './20260506_044250_add_templates';
 
 export const migrations = [
   {
@@ -22,6 +23,11 @@ export const migrations = [
   {
     up: migration_20260505_204619_add_assets.up,
     down: migration_20260505_204619_add_assets.down,
-    name: '20260505_204619_add_assets'
+    name: '20260505_204619_add_assets',
+  },
+  {
+    up: migration_20260506_044250_add_templates.up,
+    down: migration_20260506_044250_add_templates.down,
+    name: '20260506_044250_add_templates'
   },
 ];

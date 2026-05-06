@@ -72,6 +72,7 @@ export interface Config {
     brands: Brand;
     'voice-samples': VoiceSample;
     assets: Asset;
+    templates: Template;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -84,6 +85,7 @@ export interface Config {
     brands: BrandsSelect<false> | BrandsSelect<true>;
     'voice-samples': VoiceSamplesSelect<false> | VoiceSamplesSelect<true>;
     assets: AssetsSelect<false> | AssetsSelect<true>;
+    templates: TemplatesSelect<false> | TemplatesSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -292,6 +294,30 @@ export interface Asset {
   createdAt: string;
 }
 /**
+ * Slide template registry. Seeded from code; admins can toggle `active` to retire a template without a code change.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "templates".
+ */
+export interface Template {
+  id: number;
+  /**
+   * Stable identifier matching a React component in src/render/templates/.
+   */
+  key: string;
+  name: string;
+  /**
+   * Slide role this template fulfills.
+   */
+  type: 'hook' | 'listicle_item' | 'cta' | 'quote' | 'image_caption';
+  /**
+   * Inactive templates are skipped by the renderer's per-type lookup.
+   */
+  active?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -334,6 +360,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'assets';
         value: number | Asset;
+      } | null)
+    | ({
+        relationTo: 'templates';
+        value: number | Template;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -490,6 +520,18 @@ export interface AssetsSelect<T extends boolean = true> {
         id?: T;
       };
   description?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "templates_select".
+ */
+export interface TemplatesSelect<T extends boolean = true> {
+  key?: T;
+  name?: T;
+  type?: T;
+  active?: T;
   updatedAt?: T;
   createdAt?: T;
 }
