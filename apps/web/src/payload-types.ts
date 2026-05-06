@@ -73,6 +73,7 @@ export interface Config {
     'voice-samples': VoiceSample;
     assets: Asset;
     templates: Template;
+    'content-jobs': ContentJob;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -86,6 +87,7 @@ export interface Config {
     'voice-samples': VoiceSamplesSelect<false> | VoiceSamplesSelect<true>;
     assets: AssetsSelect<false> | AssetsSelect<true>;
     templates: TemplatesSelect<false> | TemplatesSelect<true>;
+    'content-jobs': ContentJobsSelect<false> | ContentJobsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -318,6 +320,65 @@ export interface Template {
   createdAt: string;
 }
 /**
+ * One row per generation request. The pipeline writes status transitions and the final draftPayload.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "content-jobs".
+ */
+export interface ContentJob {
+  id: number;
+  brand: number | Brand;
+  /**
+   * Stamped automatically from the authenticated user.
+   */
+  owner: number | User;
+  topic: string;
+  status: 'queued' | 'generating' | 'ready' | 'approved' | 'published' | 'failed';
+  /**
+   * The original generation request (topic, options). Snapshot for replay/debugging.
+   */
+  inputPayload?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * The pipeline's final DraftPayload (slides + caption + hashtags). Populated when status = ready.
+   */
+  draftPayload?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
+   * Last error message — populated when status = failed.
+   */
+  error?: string | null;
+  /**
+   * LLM provider used (e.g. ollama, anthropic).
+   */
+  provider?: string | null;
+  /**
+   * LLM model used.
+   */
+  model?: string | null;
+  voiceSamplesUsed?: number | null;
+  /**
+   * LLM + image cost for this generation, populated by the reviewer stage in #10.
+   */
+  costCents?: number | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -364,6 +425,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'templates';
         value: number | Template;
+      } | null)
+    | ({
+        relationTo: 'content-jobs';
+        value: number | ContentJob;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -532,6 +597,25 @@ export interface TemplatesSelect<T extends boolean = true> {
   name?: T;
   type?: T;
   active?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "content-jobs_select".
+ */
+export interface ContentJobsSelect<T extends boolean = true> {
+  brand?: T;
+  owner?: T;
+  topic?: T;
+  status?: T;
+  inputPayload?: T;
+  draftPayload?: T;
+  error?: T;
+  provider?: T;
+  model?: T;
+  voiceSamplesUsed?: T;
+  costCents?: T;
   updatedAt?: T;
   createdAt?: T;
 }

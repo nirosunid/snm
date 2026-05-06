@@ -6,6 +6,7 @@ import { lexicalEditor } from "@payloadcms/richtext-lexical";
 
 import { Assets } from "./collections/Assets";
 import { Brands } from "./collections/Brands";
+import { ContentJobs } from "./collections/ContentJobs";
 import { Media } from "./collections/Media";
 import { Templates } from "./collections/Templates";
 import { Users } from "./collections/Users";
@@ -23,7 +24,15 @@ export default buildConfig({
     },
   },
   editor: lexicalEditor(),
-  collections: [Users, Media, Brands, VoiceSamples, Assets, Templates],
+  collections: [
+    Users,
+    Media,
+    Brands,
+    VoiceSamples,
+    Assets,
+    Templates,
+    ContentJobs,
+  ],
   onInit: async (payload) => {
     await seedTemplates(payload);
   },

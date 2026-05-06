@@ -46,18 +46,36 @@ export async function searchAssets({
     depth: 1,
   });
 
-  const matches = docs.filter((d) => {
-    if (!q) return true;
-    const tags = (d.tags ?? []).map((t) => (t.value ?? "").toLowerCase());
-    const haystack = [
-      d.name?.toLowerCase() ?? "",
-      d.description?.toLowerCase() ?? "",
-      tags.join(" "),
-    ].join(" ");
-    return q.split(/\s+/).every((needle) => haystack.includes(needle));
-  });
+  // OR semantics: any non-stopword token in the query matching the asset's
+  // tags / name / description counts as a hit. AND was too strict for
+  // copy-led fallback queries — "Fresh drop alert" failing to match a
+  // "drop"-tagged asset because of the noise tokens.
+  const STOPWORDS = new Set([
+    "a", "an", "the", "and", "or", "of", "to", "for", "in", "on", "with",
+    "is", "are", "this", "that", "these", "those", "you", "your",
+  ]);
+  const tokens = q
+    .split(/[^a-z0-9]+/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 3 && !STOPWORDS.has(t));
 
-  return matches.map((d) => assetToResult(d));
+  const scored = docs
+    .map((d) => {
+      const tags = (d.tags ?? []).map((t) => (t.value ?? "").toLowerCase());
+      const haystack = [
+        d.name?.toLowerCase() ?? "",
+        d.description?.toLowerCase() ?? "",
+        tags.join(" "),
+      ].join(" ");
+      const hits = q
+        ? tokens.filter((needle) => haystack.includes(needle)).length
+        : 1;
+      return { d, hits };
+    })
+    .filter((row) => row.hits > 0)
+    .sort((a, b) => b.hits - a.hits);
+
+  return scored.map((row) => assetToResult(row.d));
 }
 
 export function assetToResult(asset: Asset): AssetSearchResult {

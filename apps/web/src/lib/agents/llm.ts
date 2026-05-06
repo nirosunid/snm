@@ -62,7 +62,16 @@ export function buildLanguageModel(config: LLMConfig): LanguageModelV1 {
       return anthropic(config.model);
     }
     case "google": {
-      const google = createGoogleGenerativeAI({});
+      // The SDK reads GOOGLE_GENERATIVE_AI_API_KEY by default, but our
+      // docker-compose exports the key as GOOGLE_AI_API_KEY (matches the
+      // products project's env naming). Pass it explicitly so either name
+      // works.
+      const apiKey =
+        process.env.GOOGLE_GENERATIVE_AI_API_KEY ||
+        process.env.GOOGLE_AI_API_KEY;
+      const google = createGoogleGenerativeAI(
+        apiKey ? { apiKey } : {},
+      );
       return google(config.model);
     }
     case "openai": {

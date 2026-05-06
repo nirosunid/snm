@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#8 are done (with cuts noted per-issue); #9 is the active slice.** Issue #4's deferred logo-upload landed in #6, so #4 is fully closed. Issue #6's `get_asset_library` LLM-tool wrapper landed in #8 (`getAssetLibraryTool`) — the *picking* path (planner emits `image_source: "asset"`) is the last bit waiting on #9's pipeline split. UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#9 are done (with cuts noted per-issue); #10 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -214,7 +214,7 @@ Brand-detail page now shows an asset-count badge with a "Manage library" CTA. Br
 - [x] Customer uploads ≥3 assets with tags; library page lists them with thumbnails.
 - [x] Tag-filter narrows the listing (case-insensitive substring across tags + name + description).
 - [ ] **Deferred to #8:** `get_asset_library` tool returns the right assets for a sample query. The underlying retrieval helper (`searchAssets`) is built and tested; the LLM-tool wrapper lands when tool-calling does in #8.
-- [ ] **Deferred to #7:** pipeline embeds at least one user-uploaded asset as a carousel slide. Needs the `plain image+caption` Satori template that arrives in #7.
+- [x] Pipeline embeds at least one user-uploaded asset as a carousel slide. *Closed in #9 — the planner emits `type: "image_caption"`; the writer resolves an asset URL via `searchAssets` and the renderer's `image_caption_a` template displays it. Verified end-to-end on Gemini 2.5 Flash with a sneaker-product topic and a tagged asset uploaded to the brand library.*
 - [x] Access test: another customer cannot list this brand's assets (verified via REST: cross-tenant `GET /api/assets/<id>` → 404, `?where[brand][equals]=<id>` → 0 docs).
 
 ### Bonus: closed #4's deferred logo-upload
@@ -342,19 +342,61 @@ Staff-only smoke endpoint at `POST /api/dev/tool-roundtrip` exposes a stub `getM
 
 ---
 
-## Issue 9 — Celery + RabbitMQ wiring; pipeline becomes async
+## Issue 9 — Multi-stage pipeline + content-jobs persistence ✅ DONE (Celery/RabbitMQ deferred per CLAUDE.md)
 
-### What to build
+### Translation note
 
-The pipeline migrates from a synchronous Python function (held over from #2) to a Celery task with sub-tasks per stage (`plan`, `write`, `resolve_assets`, `compose`). A Payload `content-jobs.afterCreate` hook publishes the message that kicks off the pipeline. Status state machine wired (`queued → generating → ready → failed`). Web UI polls the job row and reflects status changes.
+Original spec called for Celery + RabbitMQ + Python sub-tasks. CLAUDE.md explicitly defers those for MVP-1 ("synchronous, sub-10s round-trip, gated by approval-by-default"). This slice carries the *valuable* parts that aren't blocked on async infra: the multi-stage pipeline (planner → writer), the `content-jobs` persistence + status state machine, and finally wiring the planner so it can emit asset-slide types — closing Issue #6's last open acceptance.
+
+### What was built
+
+`content-jobs` Payload collection with all the fields the approval queue (#11) will need: `brand`, `owner` (denormalized), `topic`, `status` enum (`queued | generating | ready | approved | published | failed`), `inputPayload`/`draftPayload` JSONB, `error`, `provider`, `model`, `voiceSamplesUsed`, `costCents` (left for #10's reviewer to populate). Customer-scoped via `adminOrCustomerOwner` plus a `beforeValidate` brand-ownership guard.
+
+The pipeline is split into two LLM stages:
+- **Planner** (`apps/web/src/lib/agents/planner.ts`) — `llm.object({ stage: 'planner', schema: PlanSchema, cacheSystem: true })`. Reads brand brief + topic + (pre-fetched) voice samples, emits a Plan with one entry per slide. The planner is told whether the brand has any assets; when no assets are uploaded, it's instructed to never emit `image_caption` slides. Defensive: if the planner picks `image_caption` anyway when no assets exist, the orchestrator demotes those slides to `hook` before passing to the writer.
+- **Writer** (`apps/web/src/lib/agents/writer.ts`) — `llm.object({ stage: 'writer', schema: WriterOutputSchema, cacheSystem: true })`. Expands each slide outline into final on-brand copy in one batched call. After the LLM returns, the writer post-processes: for any slide where `type === 'image_caption'`, calls `searchAssets` (preferring the planner's `asset_query`, falling back to `copyOutline`) and writes the matched asset's URL into the slide's `imageUrl`.
+
+`runPipeline({ topic, brandId, user })` in `apps/web/src/lib/agents/pipeline.ts` orchestrates both stages, persists a `content-jobs` row up front (status `queued`), flips to `generating`, walks planner → writer, and finally writes the draft + provider + model with `status: 'ready'`. Stage failures are caught with a `[planner]`/`[writer]` tag prefix and persisted as `status: 'failed'` with the error text — the row is always inspectable.
+
+`/api/customer/generate` (and the playground UI) now goes through `runPipeline`. The brandless playground fallback is gone — content jobs require a real brand row, and the playground shows a "create a brand first" CTA when the user has none.
+
+### Implementation notes (as built)
+
+- `apps/web/src/collections/ContentJobs.ts` — collection; `apps/web/src/migrations/20260506_072122_add_content_jobs.{ts,json}` — generated migration.
+- `apps/web/src/lib/agents/{planner,writer,pipeline}.ts` — three stages + orchestrator.
+- `apps/web/src/lib/agents/schemas.ts` — extended `SLIDE_TYPES` to include `quote` and `image_caption`; added `PlanSchema` + `PlanSlideSchema`; added `imageUrl`/`caption`/`attribution` to the slide shape (`imageUrl` is `z.string().min(1)`, NOT `.url()`, because Payload media URLs are typically relative `/api/media/file/...`).
+- `apps/web/src/lib/agents/generate.ts` — **deleted**. Superseded by `pipeline.ts`. The playground still gets a brand-name + draft + status response shape; just routed through the pipeline now.
+- `apps/web/src/lib/assets/search.ts` — **switched from AND to OR token semantics**, with a stopword filter and a hit-count sort. AND was too strict for copy-led queries: "fresh drop alert" failing to match a `drop`-tagged asset because of the noise tokens. OR with hit-ranking gives the planner / writer fallback enough flex to find the right asset.
+- `apps/web/src/components/customer/generate-playground.tsx` — handles the new response shape (`{ jobId, status, draft? | error? }`), shows "create a brand first" empty state, and hides the playground brand fallback (every generation now writes a content-jobs row).
+- `apps/web/src/app/(frontend)/api/dev/llm-debug/route.ts` — staff-only debug endpoint that calls `llm.object` with a trivial schema. Useful when something fails inside generateObject and you want to confirm the integration works.
+
+### Architectural decisions made during build
+
+- **`type` implies image source** (no separate `image_source` field). The original PlanSlide had both, but providers were defaulting `image_source: 'template'` even when picking `type: 'image_caption'`, leaving us with broken intentions. Collapsing the two: `image_caption` always means asset, every other type is templated.
+- **`asset_query` is `z.string()` (required, "" when not applicable), not `z.string().nullable().optional()`.** Some providers serialize `nullable+optional` JSON schemas in ways the model can't reliably satisfy. Plain string with "explicitly empty when not applicable" is more provider-friendly.
+- **`mode: 'auto'` for non-Ollama providers.** The previous default of forcing `mode: 'json'` (an Ollama workaround for tool-calling weakness) was confusing Gemini's native structured-output API. Now `LLMClient.object` sets `mode: 'json'` only when provider is `ollama`; for everyone else it defers to the SDK's native path.
+- **Pipeline stays synchronous** per CLAUDE.md. Persistence happens up-front so failures still leave an inspectable row; status flips happen inline. Background-task variant (Celery/RabbitMQ) remains deferred.
+
+### Bugs surfaced and fixed during this slice
+
+- **`||` vs `??` in `getLanguageModel` env resolution.** docker-compose's `${VAR:-}` syntax exports unset env vars as `""`, which `??` doesn't treat as missing. The result was that any `LLM_PLANNER_PROVIDER=google` setting was being silently ignored when not also exported by the host shell. Fixed in `llm.ts`.
+- **Gemini env-name mismatch.** `@ai-sdk/google` reads `GOOGLE_GENERATIVE_AI_API_KEY` by default, but the project exports `GOOGLE_AI_API_KEY` (matches the products project's naming). Bridged in `llm.ts` so either name works.
+- **`docker compose restart` doesn't re-read `.env`.** Caught when env changes weren't taking effect — needed `up --force-recreate` to actually pick up new vars. Worth remembering when adding env-driven configuration in future slices.
 
 ### Acceptance criteria
 
-- [ ] Creating a `content-jobs` row in Payload admin enqueues a task visible in Flower.
-- [ ] Pipeline runs all stages as separate sub-tasks; each retries independently.
-- [ ] Failure in any sub-task transitions the job to `failed` with the error captured.
-- [ ] Web UI reflects status transitions (queued → generating → ready or failed).
-- [ ] No synchronous LLM calls remain in the request/response path.
+- [ ] **Deferred to a post-MVP-1 slice (per CLAUDE.md):** Creating a `content-jobs` row in Payload admin enqueues a Celery task visible in Flower.
+- [x] Pipeline runs all stages as separate sub-tasks (planner + writer; reviewer lands in #10).
+- [x] Failure in any sub-task transitions the job to `failed` with the error captured (verified: stage tag in error message, e.g. `[planner] No object generated...`).
+- [x] Web UI reflects status transitions — playground renders `status: 'ready'` with the draft, `status: 'failed'` with the error inline.
+- [ ] **Deferred to a post-MVP-1 slice:** No synchronous LLM calls remain in the request/response path. (The Celery/RabbitMQ infra is still in compose for that future slice; no slice through #9 routes through it.)
+
+### Notes for follow-on slices
+
+- **Reviewer + revision loop is #10.** It populates `costCents` and adds critique → revise round-trip.
+- **Approval queue UI is #11.** It reads `content-jobs` rows owned by the customer, drills into the persisted `draftPayload` for inline editing.
+- **Async (Celery) reactivation is post-MVP-1.** When it lands, the only refactor needed inside the pipeline is to swap the synchronous `runPipeline` call for `enqueuePipeline` (publish to RabbitMQ → Celery worker calls the same `runPipeline` function). The data shape is already final.
+- **Stronger LLM models are required for the planner stage.** llama3.2 (3B) cannot reliably satisfy the planner's nested structured-output schema; on Gemini 2.5 Flash it works on the first try. `LLM_PLANNER_PROVIDER=google` + `LLM_PLANNER_MODEL=gemini-2.5-flash` is the verified config; same for writer.
 
 ### Blocked by
 

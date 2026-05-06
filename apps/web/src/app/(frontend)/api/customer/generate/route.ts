@@ -1,14 +1,6 @@
 import { NextResponse } from "next/server";
-import { getPayload } from "payload";
 
-import config from "@payload-config";
-
-import {
-  brandLikeFromRecord,
-  HARDCODED_BRAND,
-  type BrandLike,
-} from "@/lib/agents/brand";
-import { generateDraft } from "@/lib/agents/generate";
+import { runPipeline } from "@/lib/agents/pipeline";
 import { GenerateRequestSchema } from "@/lib/agents/schemas";
 import { currentUser } from "@/lib/auth/session";
 
@@ -35,33 +27,29 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Not signed in." }, { status: 401 });
   }
 
-  let brand: BrandLike = HARDCODED_BRAND;
-  let brandId: number | undefined;
-  if (parsed.data.brandId !== undefined) {
-    const id = Number(parsed.data.brandId);
-    if (!Number.isInteger(id) || id <= 0) {
-      return NextResponse.json({ error: "Invalid brandId." }, { status: 400 });
-    }
-    const payload = await getPayload({ config });
-    try {
-      const record = await payload.findByID({
-        collection: "brands",
-        id,
-        user,
-        overrideAccess: false,
-      });
-      brand = brandLikeFromRecord(record);
-      brandId = id;
-    } catch {
-      return NextResponse.json(
-        { error: "Brand not found." },
-        { status: 404 },
-      );
-    }
+  if (parsed.data.brandId === undefined) {
+    return NextResponse.json(
+      {
+        error:
+          "brandId is required. Generated drafts are persisted as content-jobs scoped to a brand — create one at /customer/brands/new first.",
+      },
+      { status: 400 },
+    );
+  }
+
+  const brandId = Number(parsed.data.brandId);
+  if (!Number.isInteger(brandId) || brandId <= 0) {
+    return NextResponse.json({ error: "Invalid brandId." }, { status: 400 });
   }
 
   try {
-    const response = await generateDraft(parsed.data.topic, brand, { brandId });
+    const response = await runPipeline({
+      topic: parsed.data.topic,
+      brandId,
+      user,
+    });
+    // Pipeline always returns 200 with the response (status='failed' carries
+    // the error inline). Surface 502 only for unexpected throws above.
     return NextResponse.json(response);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);

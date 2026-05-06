@@ -1,13 +1,17 @@
 "use client";
 
+import { ArrowRight, Plus } from "lucide-react";
+import Link from "next/link";
 import { useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
   CardContent,
   CardDescription,
+  CardFooter,
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
@@ -29,19 +33,52 @@ export type BrandOption = {
   name: string;
 };
 
-const PLAYGROUND_BRAND_VALUE = "__playground__";
-
 export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
   const [topic, setTopic] = useState(
     "3 design details that define a Mercedes-Benz interior",
   );
   const [brandValue, setBrandValue] = useState<string>(
-    brands.length > 0 ? String(brands[0].id) : PLAYGROUND_BRAND_VALUE,
+    brands.length > 0 ? String(brands[0].id) : "",
   );
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [slideIdx, setSlideIdx] = useState(0);
+
+  if (brands.length === 0) {
+    return (
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Generate playground
+          </h1>
+          <p className="mt-1 text-muted-foreground">
+            Drafts are persisted as content jobs scoped to a brand. Create one
+            first.
+          </p>
+        </div>
+        <Card className="border-dashed">
+          <CardHeader>
+            <CardTitle>You don&apos;t have a brand yet</CardTitle>
+            <CardDescription>
+              The pipeline reads a brand brief, voice samples, and asset library
+              to plan and write the carousel. Without a brand, there&apos;s
+              nothing to write against.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button asChild>
+              <Link href={routes.customer.brands.new()}>
+                <Plus className="size-4" />
+                Create brand
+                <ArrowRight className="size-4" />
+              </Link>
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+    );
+  }
 
   async function onGenerate() {
     setLoading(true);
@@ -49,18 +86,18 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
     setResult(null);
     setSlideIdx(0);
     try {
-      const body: Record<string, unknown> = { topic };
-      if (brandValue !== PLAYGROUND_BRAND_VALUE) {
-        body.brandId = Number(brandValue);
-      }
       const res = await fetch(routes.api.customer.generate(), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
+        body: JSON.stringify({ topic, brandId: Number(brandValue) }),
       });
-      const json = await res.json();
+      const json = (await res.json()) as GenerateResponse | { error?: string };
       if (!res.ok) {
-        setError(typeof json?.error === "string" ? json.error : `HTTP ${res.status}`);
+        const msg =
+          typeof (json as { error?: string }).error === "string"
+            ? (json as { error: string }).error
+            : `HTTP ${res.status}`;
+        setError(msg);
         return;
       }
       setResult(json as GenerateResponse);
@@ -76,7 +113,8 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Generate playground</h1>
         <p className="mt-1 text-muted-foreground">
-          Pick a brand, type a topic, and the agent drafts a 3-slide carousel.
+          Pick a brand, type a topic, and the agent plans + writes a 3-slide
+          carousel. Approval-by-default — nothing publishes.
         </p>
       </div>
 
@@ -84,8 +122,14 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
         <CardHeader>
           <CardTitle>Brief</CardTitle>
           <CardDescription>
-            One LLM call against the selected brand brief. Approval-by-default —
-            nothing publishes.
+            Each generation persists a content job. View status and history at{" "}
+            <Link
+              href={routes.customer.brands.detail(Number(brandValue))}
+              className="underline-offset-4 hover:underline"
+            >
+              the brand page
+            </Link>
+            .
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
@@ -101,17 +145,8 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
                     {b.name}
                   </SelectItem>
                 ))}
-                <SelectItem value={PLAYGROUND_BRAND_VALUE}>
-                  Playground brand (Mercedes-Benz)
-                </SelectItem>
               </SelectContent>
             </Select>
-            {brands.length === 0 && (
-              <p className="text-xs text-muted-foreground">
-                You don&apos;t have any brands yet — using the playground brand
-                until you create one.
-              </p>
-            )}
           </div>
 
           <div className="space-y-2">
@@ -125,7 +160,7 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
           </div>
           <Button
             onClick={onGenerate}
-            disabled={loading || topic.trim().length < 3}
+            disabled={loading || topic.trim().length < 3 || !brandValue}
             className="w-full sm:w-auto"
           >
             {loading ? "Generating…" : "Generate"}
@@ -142,23 +177,43 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
         </Alert>
       )}
 
-      {result && (() => {
-        const slides = result.draft.slides;
+      {result?.status === "failed" && (
+        <Alert variant="destructive">
+          <AlertTitle>Job #{result.jobId} failed</AlertTitle>
+          <AlertDescription className="break-words whitespace-pre-wrap">
+            {result.error ?? "Unknown error."}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {result && result.status === "ready" && result.draft && (() => {
+        const draft = result.draft;
+        const slides = draft.slides;
         const idx = Math.min(slideIdx, slides.length - 1);
         const slide = slides[idx];
-        const src = routes.api.customer.render({
-          type: slide.type,
-          copy: slide.copy,
-          brandId:
-            brandValue !== PLAYGROUND_BRAND_VALUE ? brandValue : undefined,
-        });
+        // Asset slides carry their own URL; templated slides go through the
+        // brand-aware Satori renderer.
+        const src =
+          slide.imageUrl ??
+          routes.api.customer.render({
+            type: slide.type,
+            copy: slide.copy,
+            brandId: brandValue,
+          });
         return (
           <Card>
             <CardHeader>
-              <CardTitle>Draft</CardTitle>
-              <CardDescription>
-                {result.brand} · {result.provider}/{result.model}
-              </CardDescription>
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <CardTitle>Draft</CardTitle>
+                  <CardDescription>
+                    {result.brand} · {result.provider}/{result.model} ·{" "}
+                    {result.voiceSamplesUsed} voice sample
+                    {result.voiceSamplesUsed === 1 ? "" : "s"}
+                  </CardDescription>
+                </div>
+                <Badge variant="secondary">job #{result.jobId}</Badge>
+              </div>
             </CardHeader>
             <CardContent className="space-y-4">
               <figure className="mx-auto max-w-md">
@@ -200,11 +255,13 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
 
               <div className="space-y-2 text-sm">
                 <p>
-                  <span className="font-medium">Caption:</span> {result.draft.caption}
+                  <span className="font-medium">Caption:</span> {draft.caption}
                 </p>
-                {result.draft.hashtags.length > 0 && (
+                {draft.hashtags.length > 0 && (
                   <p className="text-primary">
-                    {result.draft.hashtags.map((t) => `#${t.replace(/^#/, "")}`).join(" ")}
+                    {draft.hashtags
+                      .map((t) => `#${t.replace(/^#/, "")}`)
+                      .join(" ")}
                   </p>
                 )}
               </div>

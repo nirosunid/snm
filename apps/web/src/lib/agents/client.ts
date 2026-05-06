@@ -93,12 +93,19 @@ export class LLMClient {
     opts: ObjectOpts<S>,
   ): Promise<ObjectResult<S>> {
     const { model, config } = getLanguageModel(opts.stage);
-    // generateObject doesn't accept tools in the SDK — use generateText with
-    // experimental_output for that combination. For pure structured output
-    // (no tools), generateObject is the right primitive.
+    // Mode selection:
+    //   - Ollama: force "json". Small models (3B-class) reliably emit JSON
+    //     with this mode but fail at tool-calling, which the SDK's "auto"
+    //     mode picks for them.
+    //   - Everyone else (anthropic, google, openai): let the SDK pick. These
+    //     providers have native structured-output APIs that the SDK uses
+    //     under "auto".
+    // Caller can override either via opts.mode.
+    const resolvedMode =
+      opts.mode ?? (config.provider === "ollama" ? "json" : "auto");
     const result = await generateObject({
       model,
-      mode: opts.mode ?? "json",
+      mode: resolvedMode,
       schema: opts.schema,
       // Caching the system prompt on Anthropic: pass via messages so we can
       // attach providerOptions to the system block.
