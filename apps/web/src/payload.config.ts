@@ -4,6 +4,7 @@ import { buildConfig } from "payload";
 import { postgresAdapter } from "@payloadcms/db-postgres";
 import { lexicalEditor } from "@payloadcms/richtext-lexical";
 
+import { Accounts } from "./collections/Accounts";
 import { Assets } from "./collections/Assets";
 import { Brands } from "./collections/Brands";
 import { ContentJobs } from "./collections/ContentJobs";
@@ -32,6 +33,7 @@ export default buildConfig({
     Assets,
     Templates,
     ContentJobs,
+    Accounts,
   ],
   onInit: async (payload) => {
     await seedTemplates(payload);

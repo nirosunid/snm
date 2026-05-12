@@ -74,6 +74,7 @@ export interface Config {
     assets: Asset;
     templates: Template;
     'content-jobs': ContentJob;
+    accounts: Account;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -88,6 +89,7 @@ export interface Config {
     assets: AssetsSelect<false> | AssetsSelect<true>;
     templates: TemplatesSelect<false> | TemplatesSelect<true>;
     'content-jobs': ContentJobsSelect<false> | ContentJobsSelect<true>;
+    accounts: AccountsSelect<false> | AccountsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -391,6 +393,47 @@ export interface ContentJob {
   createdAt: string;
 }
 /**
+ * Social-platform accounts a customer has connected. One row per (brand, platform, platformUserId). Tokens are encrypted at rest — they're never returned to the admin UI in cleartext.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "accounts".
+ */
+export interface Account {
+  id: number;
+  brand: number | Brand;
+  /**
+   * Stamped automatically from the authenticated user.
+   */
+  owner: number | User;
+  platform: 'instagram';
+  /**
+   * The platform-side user id (e.g. Instagram's numeric user id).
+   */
+  platformUserId: string;
+  /**
+   * Display handle (e.g. @example).
+   */
+  username: string;
+  /**
+   * Instagram account type. Personal accounts are refused at OAuth time and never persisted here.
+   */
+  accountType: 'business' | 'media_creator';
+  /**
+   * Encrypted at rest. Never edit by hand.
+   */
+  accessToken: string;
+  /**
+   * When the stored token expires. Long-lived IG tokens are valid ~60 days; the refresh job extends them as the deadline nears.
+   */
+  tokenExpiresAt?: string | null;
+  /**
+   * Set on initial OAuth callback success.
+   */
+  connectedAt?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -441,6 +484,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'content-jobs';
         value: number | ContentJob;
+      } | null)
+    | ({
+        relationTo: 'accounts';
+        value: number | Account;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -629,6 +676,23 @@ export interface ContentJobsSelect<T extends boolean = true> {
   model?: T;
   voiceSamplesUsed?: T;
   costCents?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "accounts_select".
+ */
+export interface AccountsSelect<T extends boolean = true> {
+  brand?: T;
+  owner?: T;
+  platform?: T;
+  platformUserId?: T;
+  username?: T;
+  accountType?: T;
+  accessToken?: T;
+  tokenExpiresAt?: T;
+  connectedAt?: T;
   updatedAt?: T;
   createdAt?: T;
 }
