@@ -200,6 +200,11 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
             copy: slide.copy,
             brandId: brandValue,
           });
+        const review = result.review;
+        const cost =
+          result.costCents != null
+            ? `$${(result.costCents / 100).toFixed(4)}`
+            : "—";
         return (
           <Card>
             <CardHeader>
@@ -209,10 +214,22 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
                   <CardDescription>
                     {result.brand} · {result.provider}/{result.model} ·{" "}
                     {result.voiceSamplesUsed} voice sample
-                    {result.voiceSamplesUsed === 1 ? "" : "s"}
+                    {result.voiceSamplesUsed === 1 ? "" : "s"} · cost {cost}
                   </CardDescription>
                 </div>
-                <Badge variant="secondary">job #{result.jobId}</Badge>
+                <div className="flex flex-col items-end gap-1">
+                  <Badge variant="secondary">job #{result.jobId}</Badge>
+                  {review && (
+                    <Badge
+                      variant={review.verdict === "ship" ? "default" : "destructive"}
+                    >
+                      {review.verdict}
+                      {review.revisionsRun > 0
+                        ? ` (after ${review.revisionsRun} revision)`
+                        : ""}
+                    </Badge>
+                  )}
+                </div>
               </div>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -265,6 +282,31 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
                   </p>
                 )}
               </div>
+
+              {review && review.issues.length > 0 && (
+                <div className="space-y-2 rounded-md border border-amber-500/50 bg-amber-500/5 p-3 text-sm">
+                  <p className="font-medium text-amber-600">
+                    Reviewer flagged {review.issues.length} issue
+                    {review.issues.length === 1 ? "" : "s"}
+                    {review.revisionsRun > 0
+                      ? " — these remain after the revision pass."
+                      : "."}
+                  </p>
+                  <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+                    {review.issues.map((iss, i) => (
+                      <li key={i}>
+                        <span className="font-mono text-xs uppercase">
+                          {iss.kind}
+                        </span>
+                        {iss.slideIndex >= 0
+                          ? ` • slide ${iss.slideIndex + 1}`
+                          : " • carousel"}
+                        : {iss.message}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
 
               <details className="text-sm">
                 <summary className="cursor-pointer text-muted-foreground hover:text-foreground">

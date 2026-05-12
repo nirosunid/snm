@@ -1,9 +1,11 @@
 /**
  * Multi-stage carousel pipeline.
  *
- * Stages: planner → writer. Reviewer (#10) and async/Celery (deferred per
- * CLAUDE.md) come later. Each generation persists a `content-jobs` row
- * and walks a status state machine: queued → generating → ready | failed.
+ * Stages: planner → writer → reviewer (with at most one writer revision).
+ * Each generation persists a `content-jobs` row and walks a status state
+ * machine: queued → generating → ready | failed.
+ *
+ * Async (Celery) reactivation is deferred per CLAUDE.md.
  */
 
 import { getPayload } from "payload";
@@ -19,9 +21,13 @@ import {
   HARDCODED_BRAND,
   type BrandLike,
 } from "./brand";
+import { estimateStageCost, sumCosts, type StageCost } from "./cost";
 import { planCarousel } from "./planner";
+import { formatIssuesForWriter, reviewDraft } from "./reviewer";
+import type { GenerateResponse, ReviewRecord } from "./schemas";
 import { writeCarousel } from "./writer";
-import type { GenerateResponse } from "./schemas";
+
+const MAX_REVISIONS = 1;
 
 export type RunPipelineInput = {
   topic: string;
@@ -35,10 +41,6 @@ export async function runPipeline(
 ): Promise<GenerateResponse> {
   const payload = await getPayload({ config });
 
-  // Resolve brand. A real brandId means the customer owns it (access-scoped
-  // load); falling back to HARDCODED_BRAND for the playground keeps the
-  // tracer working pre-brand. content-jobs requires a real brand row, so
-  // we error early if neither is available.
   let brand: BrandLike = HARDCODED_BRAND;
   if (input.brandId) {
     try {
@@ -58,7 +60,6 @@ export async function runPipeline(
     );
   }
 
-  // Persist queued state up front so failures still leave a row to inspect.
   const job = (await payload.create({
     collection: "content-jobs",
     data: {
@@ -84,18 +85,12 @@ export async function runPipeline(
   try {
     await setStatus({ status: "generating" });
 
-    // Pre-fetch voice samples (top-K against the topic) so the planner has
-    // context. The planner-stage tool exposure (getBrandVoiceTool) is
-    // wired in #8 — here we pre-fetch instead of letting the planner
-    // round-trip, because synchronous-pipeline latency matters for MVP-1.
     const voiceSamples = await getBrandVoice(
       input.brandId,
       input.topic,
       input.voiceK ?? 5,
     );
 
-    // Pre-check whether the brand has any assets — affects the planner's
-    // image_source choice.
     const someAssets = await searchAssets({
       brandId: input.brandId,
       user: input.user,
@@ -103,7 +98,9 @@ export async function runPipeline(
     });
     const assetsAvailable = someAssets.length > 0;
 
-    let stageTag = "planner";
+    let stageTag: "planner" | "writer" | "reviewer" = "planner";
+    const stageCosts: StageCost[] = [];
+
     let planResult;
     try {
       planResult = await planCarousel({
@@ -112,6 +109,13 @@ export async function runPipeline(
         voiceSamples,
         assetsAvailable,
       });
+      stageCosts.push(
+        estimateStageCost({
+          provider: planResult.provider,
+          model: planResult.model,
+          usage: planResult.usage,
+        }),
+      );
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       throw new Error(`[${stageTag}] ${m}`);
@@ -126,17 +130,84 @@ export async function runPipeline(
         plan: planResult.plan,
         user: input.user,
       });
+      stageCosts.push(
+        estimateStageCost({
+          provider: writeResult.provider,
+          model: writeResult.model,
+          usage: writeResult.usage,
+        }),
+      );
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       throw new Error(`[${stageTag}] ${m}`);
     }
 
+    stageTag = "reviewer";
+    let reviewResult;
+    try {
+      reviewResult = await reviewDraft({
+        brand,
+        draft: writeResult.draft,
+        voiceSamples,
+      });
+      stageCosts.push(
+        estimateStageCost({
+          provider: reviewResult.provider,
+          model: reviewResult.model,
+          usage: reviewResult.usage,
+        }),
+      );
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      throw new Error(`[${stageTag}] ${m}`);
+    }
+
+    // Single revision loop. If the reviewer says "revise" and we have
+    // budget, hand the issues back to the writer for one more pass. The
+    // second draft ships regardless of whether the reviewer is happy —
+    // the queue UI (#11) surfaces lingering issues to the customer.
+    let revisionsRun = 0;
+    let finalDraft = writeResult.draft;
+    if (reviewResult.review.verdict === "revise" && MAX_REVISIONS > 0) {
+      revisionsRun = 1;
+      stageTag = "writer";
+      try {
+        const revised = await writeCarousel({
+          brand,
+          brandId: input.brandId,
+          plan: planResult.plan,
+          user: input.user,
+          feedback: formatIssuesForWriter(reviewResult.review.issues),
+        });
+        finalDraft = revised.draft;
+        stageCosts.push(
+          estimateStageCost({
+            provider: revised.provider,
+            model: revised.model,
+            usage: revised.usage,
+          }),
+        );
+        writeResult = revised;
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        throw new Error(`[${stageTag} revision] ${m}`);
+      }
+    }
+
+    const reviewRecord: ReviewRecord = {
+      ...reviewResult.review,
+      revisionsRun,
+    };
+    const costCents = sumCosts(stageCosts);
+
     await setStatus({
       status: "ready",
-      draftPayload: writeResult.draft,
+      draftPayload: finalDraft,
       provider: writeResult.provider,
       model: writeResult.model,
       voiceSamplesUsed: voiceSamples.length,
+      review: reviewRecord,
+      costCents,
     });
 
     return {
@@ -146,8 +217,10 @@ export async function runPipeline(
       topic: input.topic,
       provider: writeResult.provider,
       model: writeResult.model,
-      draft: writeResult.draft,
+      draft: finalDraft,
       voiceSamplesUsed: voiceSamples.length,
+      review: reviewRecord,
+      costCents,
       error: null,
     };
   } catch (e) {
@@ -162,6 +235,8 @@ export async function runPipeline(
       model: null,
       draft: null,
       voiceSamplesUsed: 0,
+      review: null,
+      costCents: null,
       error: message,
     };
   }

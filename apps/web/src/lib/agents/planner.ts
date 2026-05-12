@@ -35,6 +35,7 @@ export type PlanStageResult = {
   plan: Plan;
   provider: string;
   model: string;
+  usage: { promptTokens?: number; completionTokens?: number } | undefined;
 };
 
 export async function planCarousel({
@@ -86,5 +87,6 @@ export async function planCarousel({
     plan: safePlan,
     provider: result.provider,
     model: result.model,
+    usage: (result.raw as { usage?: PlanStageResult["usage"] }).usage,
   };
 }

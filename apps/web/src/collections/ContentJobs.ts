@@ -111,6 +111,14 @@ export const ContentJobs: CollectionConfig = {
       },
     },
     {
+      name: "review",
+      type: "json",
+      admin: {
+        description:
+          "Reviewer stage output: { verdict, issues, cta_present, revisionsRun }. Populated when status = ready.",
+      },
+    },
+    {
       name: "error",
       type: "textarea",
       admin: {

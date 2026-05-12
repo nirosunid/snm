@@ -72,6 +72,7 @@ export type WriteStageResult = {
   provider: string;
   model: string;
   assetsResolved: number;
+  usage: { promptTokens?: number; completionTokens?: number } | undefined;
 };
 
 export async function writeCarousel({
@@ -79,11 +80,14 @@ export async function writeCarousel({
   brandId,
   plan,
   user,
+  feedback,
 }: {
   brand: BrandLike;
   brandId: number | undefined;
   plan: Plan;
   user: User;
+  /** Optional reviewer feedback appended to the writer prompt. */
+  feedback?: string;
 }): Promise<WriteStageResult> {
   const planForLLM = {
     slides: plan.slides.map((s) => ({
@@ -94,11 +98,16 @@ export async function writeCarousel({
     hashtagsHint: plan.hashtags,
   };
 
+  const promptParts = [
+    `Plan:\n${JSON.stringify(planForLLM, null, 2)}`,
+    feedback ?? "",
+  ].filter(Boolean);
+
   const result = await llm.object({
     stage: "writer",
     schema: WriterOutputSchema,
     system: SYSTEM_TEMPLATE.replace("{brief}", brandBriefText(brand)),
-    prompt: `Plan:\n${JSON.stringify(planForLLM, null, 2)}`,
+    prompt: promptParts.join("\n\n"),
     cacheSystem: true,
   });
 
@@ -151,5 +160,6 @@ export async function writeCarousel({
     provider: result.provider,
     model: result.model,
     assetsResolved,
+    usage: (result.raw as { usage?: WriteStageResult["usage"] }).usage,
   };
 }

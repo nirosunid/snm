@@ -359,6 +359,18 @@ export interface ContentJob {
     | boolean
     | null;
   /**
+   * Reviewer stage output: { verdict, issues, cta_present, revisionsRun }. Populated when status = ready.
+   */
+  review?:
+    | {
+        [k: string]: unknown;
+      }
+    | unknown[]
+    | string
+    | number
+    | boolean
+    | null;
+  /**
    * Last error message — populated when status = failed.
    */
   error?: string | null;
@@ -611,6 +623,7 @@ export interface ContentJobsSelect<T extends boolean = true> {
   status?: T;
   inputPayload?: T;
   draftPayload?: T;
+  review?: T;
   error?: T;
   provider?: T;
   model?: T;

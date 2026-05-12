@@ -77,6 +77,42 @@ export const PlanSchema = z.object({
 });
 export type Plan = z.infer<typeof PlanSchema>;
 
+export const REVIEW_ISSUE_KINDS = [
+  "brand_voice",
+  "factual_claim",
+  "cta_missing",
+  "url_in_copy",
+  "length",
+  "other",
+] as const;
+export const ReviewIssueKindSchema = z.enum(REVIEW_ISSUE_KINDS);
+export type ReviewIssueKind = z.infer<typeof ReviewIssueKindSchema>;
+
+export const ReviewIssueSchema = z.object({
+  kind: ReviewIssueKindSchema,
+  slideIndex: z
+    .number()
+    .int()
+    .min(-1)
+    .describe(
+      "Zero-based slide index this issue refers to. Use -1 for issues that apply to the caption/hashtags or the carousel as a whole.",
+    ),
+  message: z.string().min(1),
+});
+export type ReviewIssue = z.infer<typeof ReviewIssueSchema>;
+
+export const ReviewSchema = z.object({
+  verdict: z.enum(["ship", "revise"]),
+  issues: z.array(ReviewIssueSchema),
+  cta_present: z.boolean(),
+});
+export type Review = z.infer<typeof ReviewSchema>;
+
+/** Persisted on content-jobs.review when the pipeline finalizes. */
+export type ReviewRecord = Review & {
+  revisionsRun: number;
+};
+
 export const GenerateRequestSchema = z.object({
   topic: z.string().min(3).max(300),
   brandId: z.union([z.number().int().positive(), z.string().min(1)]).optional(),
@@ -92,6 +128,15 @@ export const GenerateResponseSchema = z.object({
   model: z.string().nullable(),
   draft: DraftPayloadSchema.nullable(),
   voiceSamplesUsed: z.number().int().nonnegative().default(0),
+  review: z
+    .object({
+      verdict: z.enum(["ship", "revise"]),
+      issues: z.array(ReviewIssueSchema),
+      cta_present: z.boolean(),
+      revisionsRun: z.number().int().nonnegative(),
+    })
+    .nullable(),
+  costCents: z.number().nonnegative().nullable(),
   error: z.string().nullable(),
 });
 export type GenerateResponse = z.infer<typeof GenerateResponseSchema>;
