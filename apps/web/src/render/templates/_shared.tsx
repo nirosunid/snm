@@ -28,29 +28,27 @@ export function withDefaults(brand: Partial<RenderBrand> | undefined): RenderBra
   };
 }
 
-export function BrandFooter({ brand }: { brand: RenderBrand }): ReactElement {
+/**
+ * Logo watermark for the slide. Renders nothing when the brand has no logo —
+ * Instagram already shows the brand in the post header, so an in-slide text
+ * label would just duplicate that and read as templated content.
+ */
+export function BrandFooter({
+  brand,
+}: {
+  brand: RenderBrand;
+}): ReactElement | null {
+  if (!brand.logoUrl) return null;
   return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 12,
-        fontSize: 24,
-        color: brand.palette.text,
-        opacity: 0.7,
-      }}
-    >
-      {brand.logoUrl ? (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={brand.logoUrl}
-          alt=""
-          width={32}
-          height={32}
-          style={{ display: "block" }}
-        />
-      ) : null}
-      <span style={{ fontWeight: 700 }}>{brand.name}</span>
+    <div style={{ display: "flex", alignItems: "center" }}>
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={brand.logoUrl}
+        alt=""
+        width={56}
+        height={56}
+        style={{ display: "block", opacity: 0.85 }}
+      />
     </div>
   );
 }

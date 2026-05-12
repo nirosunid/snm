@@ -1,3 +1,4 @@
+import { BrandFooter } from "./_shared";
 import type { TemplateDef } from "./types";
 
 export const ctaA: TemplateDef = {
@@ -31,18 +32,7 @@ export const ctaA: TemplateDef = {
         {props.copy ?? ""}
       </div>
 
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          fontSize: 24,
-          fontWeight: 700,
-          color: brand.palette.background,
-          opacity: 0.8,
-        }}
-      >
-        {brand.name}
-      </div>
+      <BrandFooter brand={brand} />
     </div>
   ),
 };

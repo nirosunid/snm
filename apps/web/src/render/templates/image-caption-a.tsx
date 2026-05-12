@@ -71,23 +71,28 @@ export const imageCaptionA: TemplateDef = {
           </div>
         ) : null}
 
-        <div
-          style={{
-            display: "flex",
-            position: "absolute",
-            top: 32,
-            right: 32,
-            padding: "8px 16px",
-            background: brand.palette.accent,
-            color: brand.palette.background,
-            fontSize: 22,
-            fontWeight: 700,
-            letterSpacing: "0.12em",
-            borderRadius: 6,
-          }}
-        >
-          {brand.name}
-        </div>
+        {brand.logoUrl ? (
+          <div
+            style={{
+              display: "flex",
+              position: "absolute",
+              top: 32,
+              right: 32,
+              padding: 12,
+              background: "rgba(0,0,0,0.45)",
+              borderRadius: 8,
+            }}
+          >
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={brand.logoUrl}
+              alt=""
+              width={48}
+              height={48}
+              style={{ display: "block" }}
+            />
+          </div>
+        ) : null}
       </div>
     );
   },
