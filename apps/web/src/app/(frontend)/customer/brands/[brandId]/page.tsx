@@ -1,10 +1,21 @@
-import { ArrowLeft, ArrowRight, Image as ImageIcon, ListChecks } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowRight,
+  Image as ImageIcon,
+  Instagram,
+  ListChecks,
+} from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPayload } from "payload";
 
 import config from "@payload-config";
 
+import {
+  Alert,
+  AlertDescription,
+  AlertTitle,
+} from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -16,15 +27,20 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { DisconnectAccountButton } from "@/components/customer/disconnect-account-button";
 import { VoiceSamplesForm } from "@/components/customer/voice-samples-form";
 import { currentUser } from "@/lib/auth/session";
 import { routes } from "@/lib/routes";
-import type { Brand } from "@/payload-types";
+import type { Account, Brand } from "@/payload-types";
 
-type Props = { params: Promise<{ brandId: string }> };
+type Props = {
+  params: Promise<{ brandId: string }>;
+  searchParams: Promise<{ ig?: string; ig_message?: string }>;
+};
 
-export default async function BrandDetailPage({ params }: Props) {
+export default async function BrandDetailPage({ params, searchParams }: Props) {
   const { brandId } = await params;
+  const { ig, ig_message: igMessage } = await searchParams;
   const id = Number(brandId);
   if (!Number.isInteger(id) || id <= 0) notFound();
 
@@ -74,6 +90,16 @@ export default async function BrandDetailPage({ params }: Props) {
     depth: 0,
   });
 
+  const { docs: accounts } = await payload.find({
+    collection: "accounts",
+    user,
+    overrideAccess: false,
+    where: { brand: { equals: brand.id } },
+    sort: "-connectedAt",
+    limit: 20,
+    depth: 0,
+  });
+
   const palette = brand.palette ?? {};
   const swatches = (
     [
@@ -84,6 +110,8 @@ export default async function BrandDetailPage({ params }: Props) {
       ["text", palette.text],
     ] as const
   ).filter(([, v]) => Boolean(v));
+
+  const banner = oauthBanner(ig, igMessage);
 
   return (
     <div className="mx-auto max-w-3xl space-y-8">
@@ -99,6 +127,8 @@ export default async function BrandDetailPage({ params }: Props) {
           <p className="mt-1 text-muted-foreground">{brand.niche}</p>
         ) : null}
       </div>
+
+      {banner}
 
       <Card>
         <CardHeader>
@@ -211,6 +241,65 @@ export default async function BrandDetailPage({ params }: Props) {
 
       <Card>
         <CardHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Connected accounts</CardTitle>
+              <CardDescription>
+                Instagram accounts this brand publishes to. Business or Creator
+                only — Personal accounts are refused at connect time.
+              </CardDescription>
+            </div>
+            <Badge variant="secondary">
+              <Instagram className="mr-1 size-3" />
+              {accounts.length} connected
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {accounts.length === 0 ? (
+            <p className="text-sm text-muted-foreground">
+              No accounts yet — connect Instagram to enable publishing.
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {accounts.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex items-start justify-between gap-3 rounded-md border bg-muted/30 p-3 text-sm"
+                >
+                  <div className="space-y-1">
+                    <p className="font-medium">@{a.username}</p>
+                    <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                      <Badge variant="outline" className="uppercase">
+                        {a.accountType.replace("_", " ")}
+                      </Badge>
+                      <span>id {a.platformUserId}</span>
+                      <span>
+                        {formatExpiry(a.tokenExpiresAt ?? null)}
+                      </span>
+                    </div>
+                  </div>
+                  <DisconnectAccountButton
+                    accountId={a.id}
+                    username={a.username}
+                  />
+                </li>
+              ))}
+            </ul>
+          )}
+        </CardContent>
+        <CardFooter>
+          <Button asChild>
+            <Link href={routes.api.oauth.instagram.start(brand.id)}>
+              <Instagram className="size-4" />
+              Connect Instagram
+            </Link>
+          </Button>
+        </CardFooter>
+      </Card>
+
+      <Card>
+        <CardHeader>
           <CardTitle>Palette &amp; font</CardTitle>
           <CardDescription>Applied to every generated slide.</CardDescription>
         </CardHeader>
@@ -265,6 +354,60 @@ function Field({ label, value }: { label: string; value: string }) {
       <p className="whitespace-pre-wrap">{value}</p>
     </div>
   );
+}
+
+function oauthBanner(ig: string | undefined, message: string | undefined) {
+  if (!ig) return null;
+  if (ig === "connected") {
+    return (
+      <Alert>
+        <AlertTitle>Instagram connected</AlertTitle>
+        <AlertDescription>
+          The account is ready to publish to. You can disconnect anytime below.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  if (ig === "personal_account_refused") {
+    return (
+      <Alert variant="destructive">
+        <AlertTitle>Personal Instagram accounts aren&apos;t supported</AlertTitle>
+        <AlertDescription className="space-y-2">
+          <p>
+            {message ??
+              "Convert this account to Business or Creator in the Instagram app, then reconnect."}
+          </p>
+          <p>
+            <a
+              href="https://help.instagram.com/502981923235522"
+              target="_blank"
+              rel="noreferrer"
+              className="underline-offset-4 hover:underline"
+            >
+              How to switch to a Business or Creator account
+            </a>
+          </p>
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  return (
+    <Alert variant="destructive">
+      <AlertTitle>Couldn&apos;t connect Instagram</AlertTitle>
+      <AlertDescription className="break-words whitespace-pre-wrap">
+        {message ?? "Try again from the Connect button below."}
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function formatExpiry(iso: string | null): string {
+  if (!iso) return "no expiry recorded";
+  const d = new Date(iso);
+  const days = Math.round((d.getTime() - Date.now()) / (24 * 60 * 60 * 1000));
+  if (days <= 0) return "expired — reconnect";
+  if (days <= 14) return `expires in ${days} day${days === 1 ? "" : "s"}`;
+  return `expires ${d.toLocaleDateString()}`;
 }
 
 function ListField({ label, items }: { label: string; items: string[] }) {
