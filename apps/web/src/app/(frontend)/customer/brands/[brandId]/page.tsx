@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowRight, Image as ImageIcon } from "lucide-react";
+import { ArrowLeft, ArrowRight, Image as ImageIcon, ListChecks } from "lucide-react";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPayload } from "payload";
@@ -60,6 +60,18 @@ export default async function BrandDetailPage({ params }: Props) {
     overrideAccess: false,
     where: { brand: { equals: brand.id } },
     limit: 0,
+  });
+
+  const { totalDocs: queueCount } = await payload.find({
+    collection: "content-jobs",
+    user,
+    overrideAccess: false,
+    where: {
+      brand: { equals: brand.id },
+      status: { in: ["queued", "generating", "ready"] },
+    },
+    limit: 0,
+    depth: 0,
   });
 
   const palette = brand.palette ?? {};
@@ -165,6 +177,32 @@ export default async function BrandDetailPage({ params }: Props) {
           <Button asChild variant="outline">
             <Link href={routes.customer.brands.library(brand.id)}>
               Manage library
+              <ArrowRight className="size-4" />
+            </Link>
+          </Button>
+        </CardFooter>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <CardTitle>Approval queue</CardTitle>
+              <CardDescription>
+                Drafts waiting on your review. Edit slide copy, then approve or
+                discard.
+              </CardDescription>
+            </div>
+            <Badge variant="secondary">
+              <ListChecks className="mr-1 size-3" />
+              {queueCount} open
+            </Badge>
+          </div>
+        </CardHeader>
+        <CardFooter>
+          <Button asChild variant="outline">
+            <Link href={routes.customer.brands.queue(brand.id)}>
+              Open queue
               <ArrowRight className="size-4" />
             </Link>
           </Button>

@@ -317,6 +317,19 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
                 </pre>
               </details>
             </CardContent>
+            <CardFooter>
+              <Button asChild>
+                <Link
+                  href={routes.customer.brands.queueJob(
+                    Number(brandValue),
+                    result.jobId,
+                  )}
+                >
+                  Open in queue
+                  <ArrowRight className="size-4" />
+                </Link>
+              </Button>
+            </CardFooter>
           </Card>
         );
       })()}

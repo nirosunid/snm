@@ -109,9 +109,10 @@ export const ReviewSchema = z.object({
 export type Review = z.infer<typeof ReviewSchema>;
 
 /** Persisted on content-jobs.review when the pipeline finalizes. */
-export type ReviewRecord = Review & {
-  revisionsRun: number;
-};
+export const ReviewRecordSchema = ReviewSchema.extend({
+  revisionsRun: z.number().int().nonnegative(),
+});
+export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 
 export const GenerateRequestSchema = z.object({
   topic: z.string().min(3).max(300),

@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#10 are done (with cuts noted per-issue); #11 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#11 are done (with cuts noted per-issue); #12 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -459,20 +459,60 @@ Cost tracking landed via `apps/web/src/lib/agents/cost.ts`: per-stage cost is es
 
 ---
 
-## Issue 11 — Approval queue UI + inline copy editing
+## Issue 11 — Approval queue UI + inline copy editing ✅ DONE
 
-### What to build
+### What was built
 
-`/brands/[brandId]/queue/` page listing the customer's `content-jobs` rows with status badges. Drill-in `/queue/[jobId]/` page showing the carousel preview slide-by-slide, per-slide inline copy editor, Approve / Discard buttons. Persistence to `draftPayload` on edit.
+Two new customer routes, both scoped to a brand:
+
+- **`/customer/brands/[brandId]/queue`** — server-rendered list of the brand's `content-jobs` (newest first, capped at 100). Each row shows topic, status badge, reviewer verdict + issue count (#10), cost (`$X.XXXX`), creation timestamp, and a deep link into the drill-in.
+- **`/customer/brands/[brandId]/queue/[jobId]`** — server-rendered drill-in that safe-parses `draftPayload` and `review` from the json columns (via `DraftPayloadSchema` and the new `ReviewRecordSchema`), then hands the typed shape to a client `JobEditor`. Cross-checks that the job's `brand` matches the URL `brandId` and 404s on mismatch even when the customer owns both.
+
+The `JobEditor` ([apps/web/src/components/customer/job-editor.tsx](apps/web/src/components/customer/job-editor.tsx)) is a single client component:
+
+- Slide nav (prev / next + `{type} N / M` label) with the same Satori-rendered preview the playground uses. Live preview: copy edits re-render templated slides via `routes.api.customer.render` (the endpoint reads `copy` from query params). Asset slides keep their resolved `imageUrl` — copy edits don't swap the image.
+- Per-slide `Textarea` for `copy`, plus a carousel-level caption editor. Hashtags are surfaced read-only (rare-edit case).
+- Reviewer issues from `review.issues` are bucketed by `slideIndex`: per-slide issues render inline beneath the slide copy with a count badge; carousel-level issues (`slideIndex === -1`) render in a separate panel above the action row.
+- Three actions wired to server actions in [apps/web/src/lib/jobs/actions.ts](apps/web/src/lib/jobs/actions.ts): `saveDraftEdits` (re-validates with `DraftPayloadSchema`, only on `status === 'ready'`), `approveJob` (`ready` → `approved`), and `discardJob` (Payload `delete`, gated by `AlertDialog` confirm). All three call `revalidatePath` on the relevant queue + detail URLs and use `overrideAccess: false` so Payload's collection access enforces ownership server-side.
+
+UI safety: Approve is disabled while edits are dirty (forces a save first); Save is disabled when not dirty; both are disabled outside `status === 'ready'`. The drill-in renders read-only when status is `approved` / `published` / `failed` / `queued` / `generating`.
+
+Entry points: the brand detail page grows an **Approval queue** card with an open-job count (jobs in `queued` / `generating` / `ready`), and the generate playground result card now ends with an **Open in queue** CTA so the post-generate path leads straight into the approval flow.
+
+### Implementation notes (as built)
+
+- `apps/web/src/lib/routes.ts` — `routes.customer.brands.queue(brandId)` and `routes.customer.brands.queueJob(brandId, jobId)`.
+- `apps/web/src/lib/agents/schemas.ts` — `ReviewRecordSchema = ReviewSchema.extend({ revisionsRun })`, with `ReviewRecord` derived from it (was a plain TS type). Lets the drill-in safe-parse the persisted json column without ad-hoc duck-typing.
+- `apps/web/src/lib/jobs/actions.ts` — `saveDraftEdits`, `approveJob`, `discardJob` server actions. All gate on `currentUser()` then re-fetch the job through Payload with `overrideAccess: false` to confirm ownership before mutating.
+- `apps/web/src/app/(frontend)/customer/brands/[brandId]/queue/page.tsx` — list page (shadcn `Table`).
+- `apps/web/src/app/(frontend)/customer/brands/[brandId]/queue/[jobId]/page.tsx` — drill-in server page.
+- `apps/web/src/components/customer/job-editor.tsx` — client editor (slide nav, inline `Textarea`s, Save / Approve / Discard with `AlertDialog` confirm on discard).
+- `apps/web/src/app/(frontend)/customer/brands/[brandId]/page.tsx` — Approval queue card with open-job count.
+- `apps/web/src/components/customer/generate-playground.tsx` — Open-in-queue CTA on the result card.
+
+### Architectural decisions made during build
+
+- **Discard = hard delete, not a `discarded` status.** Avoids a `content_jobs.status` enum migration and keeps the queue clean. We lose the cost-of-discarded-drafts datapoint, which is acceptable for MVP-1 (aggregate cost analytics is future work). If we later want to retain discarded drafts (e.g., for analytics or undo), the migration is small.
+- **Per-slide `copy` and carousel `caption` are editable; `type`, `imageUrl`, `attribution`, `hashtags` are not.** Issue #11's acceptance criteria explicitly covers slide copy; caption was a tiny extension because the editor surface was already open. Editing slide `type` or swapping `imageUrl` is a different mental model (re-planning) and belongs in a "regenerate this slide" slice if/when needed. Hashtags omitted because the array editor adds friction without a frequent use case.
+- **Save before Approve.** Approve is disabled while the editor is dirty rather than implicitly persisting on approve. Avoids a race where stale state slips through the approval gate; surfaces the save as a deliberate step.
+- **Server actions over API routes.** Voice-samples already uses an action; render and generate use route handlers because they're hit from non-form contexts (image src URLs, fetch from a `"use client"` component). The queue mutations live in `"use server"` actions because they're called from a single client component and benefit from `revalidatePath` integration. Access control flows through Payload Local API with `overrideAccess: false` so the collection's access rules are honored.
+- **Safe-parse `draftPayload` and `review` on the server.** Payload types both columns as `unknown`-ish json. The drill-in passes the parsed, typed result to `JobEditor`, so the client component never has to know the json was loose; if a row carries a pre-#10 `draftPayload` shape that parses cleanly but lacks `review`, the editor still works (reviewer panels just don't render).
+- **Live preview reads from the render endpoint with the edited copy as a query param.** No new endpoint needed — the existing render flow is already keyed by copy. Asset slides retain their resolved `imageUrl` because the rendered template doesn't own the image; copy edits would re-render the template overlay, not the photo.
 
 ### Acceptance criteria
 
-- [ ] Queue page lists the customer's jobs with status badges and basic metadata.
-- [ ] Drill-in shows all slides with images and editable copy fields.
-- [ ] Editing a slide's copy and saving persists to `content-jobs.draftPayload`.
-- [ ] Discard removes the job (or marks it discarded — design decision in the slice).
-- [ ] Approve transitions status to `approved`.
-- [ ] Customer can see issues from the reviewer (#10) inline if `issues` is populated.
+- [x] Queue page lists the customer's jobs with status badges and basic metadata (topic, status, reviewer verdict + issue count, cost, created-at).
+- [x] Drill-in shows all slides with images (live Satori preview reflecting current copy) and editable copy fields.
+- [x] Editing a slide's copy and saving persists to `content-jobs.draftPayload` (re-validated via `DraftPayloadSchema`).
+- [x] Discard removes the job (Payload `delete` through the access-checked Local API).
+- [x] Approve transitions status to `approved`.
+- [x] Reviewer issues from `content-jobs.review` are rendered inline — per-slide issues next to the slide they target, carousel-level (`slideIndex === -1`) issues in their own panel.
+
+### Notes for follow-on slices
+
+- **Publish flow (#13)** plugs into the Approve action: once `accounts` (#12) lands, the same server action can either kick off a Celery `publish_carousel` task or, more likely given the deferred Celery posture, call IG Graph API synchronously and transition `approved → published`. The button copy / surface lives in `JobEditor` already.
+- **`status === 'discarded'`** can be added later if analytics want to retain rejected drafts; the `discardJob` action becomes a status update instead of a delete. No other call site changes.
+- **Bulk actions** (approve / discard multiple jobs) aren't needed for MVP-1 — single-job flow is the primary path. Defer until we have a customer with enough queue depth to feel it.
 
 ### Blocked by
 
