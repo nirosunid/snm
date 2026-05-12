@@ -65,7 +65,7 @@ export const quoteA: TemplateDef = {
         ) : null}
       </div>
 
-      <BrandFooter brand={brand} kicker="quote" />
+      <BrandFooter brand={brand} />
     </div>
   ),
 };

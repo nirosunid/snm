@@ -28,71 +28,29 @@ export function withDefaults(brand: Partial<RenderBrand> | undefined): RenderBra
   };
 }
 
-export function BrandFooter({
-  brand,
-  kicker,
-}: {
-  brand: RenderBrand;
-  kicker: string;
-}): ReactElement {
+export function BrandFooter({ brand }: { brand: RenderBrand }): ReactElement {
   return (
     <div
       style={{
         display: "flex",
-        justifyContent: "space-between",
         alignItems: "center",
+        gap: 12,
         fontSize: 24,
         color: brand.palette.text,
         opacity: 0.7,
       }}
     >
-      <span style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        {brand.logoUrl ? (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={brand.logoUrl}
-            alt=""
-            width={32}
-            height={32}
-            style={{ display: "block" }}
-          />
-        ) : null}
-        <span style={{ fontWeight: 700 }}>{brand.name}</span>
-      </span>
-      <span>{kicker}</span>
-    </div>
-  );
-}
-
-export function Kicker({
-  brand,
-  label,
-}: {
-  brand: RenderBrand;
-  label: string;
-}): ReactElement {
-  return (
-    <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 16,
-        fontSize: 28,
-        fontWeight: 700,
-        letterSpacing: "0.12em",
-        color: brand.palette.accent,
-      }}
-    >
-      <span
-        style={{
-          display: "flex",
-          width: 28,
-          height: 6,
-          background: brand.palette.accent,
-          borderRadius: 3,
-        }}
-      />
-      {label}
+      {brand.logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={brand.logoUrl}
+          alt=""
+          width={32}
+          height={32}
+          style={{ display: "block" }}
+        />
+      ) : null}
+      <span style={{ fontWeight: 700 }}>{brand.name}</span>
     </div>
   );
 }

@@ -23,32 +23,13 @@ export const listicleA: TemplateDef = {
       <div
         style={{
           display: "flex",
-          alignItems: "baseline",
-          gap: 24,
+          fontSize: 220,
+          fontWeight: 900,
+          lineHeight: 0.9,
+          color: brand.palette.accent,
         }}
       >
-        <span
-          style={{
-            display: "flex",
-            fontSize: 220,
-            fontWeight: 900,
-            lineHeight: 0.9,
-            color: brand.palette.accent,
-          }}
-        >
-          1
-        </span>
-        <span
-          style={{
-            display: "flex",
-            fontSize: 28,
-            fontWeight: 700,
-            letterSpacing: "0.12em",
-            color: brand.palette.secondary,
-          }}
-        >
-          THE TIP
-        </span>
+        1
       </div>
 
       <div
@@ -63,7 +44,7 @@ export const listicleA: TemplateDef = {
         {props.copy ?? ""}
       </div>
 
-      <BrandFooter brand={brand} kicker="tip" />
+      <BrandFooter brand={brand} />
     </div>
   ),
 };

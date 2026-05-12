@@ -1,4 +1,4 @@
-import { BrandFooter, Kicker } from "./_shared";
+import { BrandFooter } from "./_shared";
 import type { TemplateDef } from "./types";
 
 export const hookA: TemplateDef = {
@@ -20,8 +20,6 @@ export const hookA: TemplateDef = {
         fontFamily: `"${brand.font}", sans-serif`,
       }}
     >
-      <Kicker brand={brand} label="HOOK" />
-
       <div
         style={{
           display: "flex",
@@ -34,7 +32,7 @@ export const hookA: TemplateDef = {
         {props.copy ?? ""}
       </div>
 
-      <BrandFooter brand={brand} kicker="hook" />
+      <BrandFooter brand={brand} />
     </div>
   ),
 };
