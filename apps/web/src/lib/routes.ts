@@ -74,6 +74,15 @@ export const routes = {
       }): string => withQuery(`${API_CUSTOMER_PREFIX}/render`, params),
       voiceSamples: (): string => `${API_CUSTOMER_PREFIX}/voice-samples`,
     },
+    oauth: {
+      instagram: {
+        start: (brandId: number | string): string =>
+          withQuery("/api/oauth/instagram/start", { brandId }),
+        // Path-only — the URL Meta posts back to. Must match
+        // INSTAGRAM_REDIRECT_URI in the .env.
+        callback: (): string => "/api/oauth/instagram/callback",
+      },
+    },
   },
 
   // Dev-only surface (staff-gated)
