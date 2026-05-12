@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#11 are done (with cuts noted per-issue); #12 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#12 are done (with cuts noted per-issue); #13 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -520,19 +520,73 @@ Entry points: the brand detail page grows an **Approval queue** card with an ope
 
 ---
 
-## Issue 12 — Instagram OAuth + Business/Creator validation + token storage
+## Issue 12 — Instagram OAuth + Business/Creator validation + token storage ✅ DONE (live OAuth round-trip validated against mock; real Meta-App round-trip + cron scheduler deferred)
 
-### What to build
+### What was built
 
-`Accounts` Payload collection. OAuth callback at `/api/oauth/instagram/callback`. Validates that the connecting IG account is Business or Creator (refuses Personal accounts with a clear conversion-required error message and link to Meta's docs). Tokens encrypted at rest using a server-side secret. Token refresh as a Payload scheduled job (cron every ~6 hours, refreshes any tokens expiring in <14 days).
+End-to-end Instagram Login OAuth flow plus the `Accounts` collection that backs it. Built against Meta's [Instagram Login API](https://developers.facebook.com/docs/instagram-platform/instagram-login) (the post-deprecation path that no longer needs a Facebook Page link). Mock mode lets the full UI flow run without Meta App credentials.
+
+**Data layer ([apps/web/src/collections/Accounts.ts](apps/web/src/collections/Accounts.ts), migration `20260512_134747_add_accounts`).** Fields: `brand` (rel, indexed), `owner` (rel, admin-write-only, defaulted to `req.user.id`), `platform` (enum: `instagram`), `platformUserId` (text, indexed), `username`, `accountType` (enum: `business` / `media_creator` — `PERSONAL` is refused at OAuth time and **never** persisted), `accessToken` (text, encrypted via beforeChange hook, admin-only field-level access in the Local API to keep it out of any inadvertent customer-facing serialization), `tokenExpiresAt`, `connectedAt`. Collection access is `adminOrCustomerOwner` — same pattern as Brands / VoiceSamples / Assets / ContentJobs.
+
+**Token encryption ([apps/web/src/lib/crypto/tokens.ts](apps/web/src/lib/crypto/tokens.ts)).** AES-256-GCM, key derived from `TOKEN_ENCRYPTION_KEY` via SHA-256 so the env value can be any string ≥ 32 chars. Wire format is `gcm:v1:<iv>:<tag>:<ct>` (base64url parts) — the prefix lets us migrate ciphers later without guessing what existing rows used. `encryptToken` is idempotent so the field hook is safe to run on already-encrypted writes.
+
+**OAuth round-trip.**
+
+- [apps/web/src/lib/instagram/oauth.ts](apps/web/src/lib/instagram/oauth.ts) — `buildAuthorizeUrl`, `exchangeCodeForToken`, `exchangeForLongLivedToken`, `refreshLongLivedToken`, `fetchProfile`. Every helper checks `isMockMode()` first and returns deterministic synthetic responses when on.
+- [apps/web/src/lib/instagram/state.ts](apps/web/src/lib/instagram/state.ts) — opaque, HMAC-SHA256-signed (with `PAYLOAD_SECRET`) state token. Encodes `brandId`, a 16-byte nonce, and a creation timestamp; rejects anything older than 10 minutes. Also written to an httpOnly cookie so the callback can confirm the state didn't come from a third party.
+- [apps/web/src/app/(frontend)/api/oauth/instagram/start/route.ts](apps/web/src/app/(frontend)/api/oauth/instagram/start/route.ts) — auth-gates, reconfirms brand ownership through the customer-scoped Local API (`overrideAccess: false`), mints + cookies the state, then redirects to Meta's authorize URL (or in mock mode, straight to the callback with a synthetic code).
+- [apps/web/src/app/(frontend)/api/oauth/instagram/callback/route.ts](apps/web/src/app/(frontend)/api/oauth/instagram/callback/route.ts) — verifies state against the cookie, clears the cookie (single-use), short→long-lived token exchange, profile fetch, refuses `PERSONAL` with a `?ig=personal_account_refused` redirect, and **upserts** the `accounts` row keyed by `(brand, platform=instagram, platformUserId)` so reconnecting the same account refreshes the token in place rather than creating a duplicate.
+
+**Mock mode.** `INSTAGRAM_OAUTH_MOCK=1` short-circuits the entire Meta round-trip. `INSTAGRAM_OAUTH_MOCK_ACCOUNT_TYPE` (`BUSINESS` / `MEDIA_CREATOR` / `PERSONAL`) lets us drive each callback branch deliberately — verified live: `PERSONAL` hits the refusal branch with the right error copy; `BUSINESS` and `MEDIA_CREATOR` upsert an account row. `INSTAGRAM_OAUTH_MOCK_USERNAME` / `INSTAGRAM_OAUTH_MOCK_USER_ID` make the connect/disconnect cycle observable. **No Meta App credentials needed in dev** as long as mock is on — `.env.example` defaults it on.
+
+**UI surface ([apps/web/src/app/(frontend)/customer/brands/[brandId]/page.tsx](apps/web/src/app/(frontend)/customer/brands/[brandId]/page.tsx)).** A new **Connected accounts** card on the brand detail page lists the brand's IG accounts with handle, account-type badge, expiry hint (`expires in N days` once inside the 14-day window, `expired — reconnect` past it), and a per-row `DisconnectAccountButton` (client component → `disconnectAccount` server action → Payload `delete` through access-checked Local API). A **Connect Instagram** CTA in the footer kicks off the start route. The page also picks up the callback's `?ig=connected|personal_account_refused|error&ig_message=...` query params and renders an alert above the cards — the personal-account variant deep-links to Meta's "How to switch to a Business or Creator account" doc.
+
+**Token refresh ([apps/web/src/lib/instagram/refresh.ts](apps/web/src/lib/instagram/refresh.ts) + [apps/web/src/app/(frontend)/api/admin/refresh-instagram-tokens/route.ts](apps/web/src/app/(frontend)/api/admin/refresh-instagram-tokens/route.ts)).** `refreshExpiringInstagramTokens({ windowDays = 14, limit = 100 })` scans for accounts whose `tokenExpiresAt` is inside the window (or null), decrypts each token, calls the `ig_refresh_token` grant, and persists the new long-lived token + expiry. Idempotent — only rows that actually need rotation are touched, and the encryption hook on `accessToken` makes the persisted blob ciphertext again. The admin-only `POST /api/admin/refresh-instagram-tokens` endpoint is the trigger surface; the actual cron orchestration is **deferred** (see notes below).
+
+### Implementation notes (as built)
+
+- `apps/web/src/collections/Accounts.ts` + `apps/web/src/migrations/20260512_134747_add_accounts.{ts,json}` — collection + DDL.
+- `apps/web/src/lib/crypto/tokens.ts` — AES-256-GCM encryptor with idempotent encrypt + prefix-versioned wire format.
+- `apps/web/src/lib/instagram/oauth.ts` — IG Login API client + mock-mode short-circuits.
+- `apps/web/src/lib/instagram/state.ts` — signed, time-limited OAuth state with cookie pairing.
+- `apps/web/src/lib/instagram/refresh.ts` — refresh-window scanner + per-row rotation.
+- `apps/web/src/app/(frontend)/api/oauth/instagram/start/route.ts` + `/callback/route.ts` — OAuth round-trip.
+- `apps/web/src/app/(frontend)/api/admin/refresh-instagram-tokens/route.ts` — admin-gated refresh trigger.
+- `apps/web/src/lib/accounts/actions.ts` — `disconnectAccount` server action.
+- `apps/web/src/components/customer/disconnect-account-button.tsx` — client component, `AlertDialog`-gated confirm.
+- `apps/web/src/app/(frontend)/customer/brands/[brandId]/page.tsx` — Connected accounts card + OAuth result banner.
+- `apps/web/src/lib/routes.ts` — `routes.api.oauth.instagram.start(brandId)` + `routes.api.oauth.instagram.callback()`.
+- `.env.example` — `INSTAGRAM_OAUTH_MOCK*` scaffolding (defaults on so first-run boot has a working Connect button).
+
+### Architectural decisions made during build
+
+- **Instagram Login (not Facebook Login).** Meta deprecated Instagram Basic Display in Dec 2024 and recommends the standalone Instagram Login API for Business/Creator connection without a Facebook Page link. We use the IG-Login scopes (`instagram_business_basic`, `instagram_business_content_publish`) — these are what the publish flow (#13) will need to call `media_publish`.
+- **PERSONAL is rejected at the callback, never persisted.** The `accountType` enum in the DB schema only contains `business` / `media_creator`. If Meta ever adds a fourth account type, the callback redirects with `?ig=personal_account_refused` and the connection is dropped — no half-written row.
+- **Upsert on `(brand, platform, platformUserId)`.** Reconnecting the same IG account refreshes the stored token in place rather than appending a duplicate row. Avoids the "I clicked Connect three times" drift and means the customer sees one row per IG account.
+- **State token is signed with `PAYLOAD_SECRET`, also cookie-paired.** Either alone is enough for CSRF protection, but doing both means a leaked signing secret without a valid cookie OR a stolen cookie without a valid signature both fail. Cookie is httpOnly + SameSite=Lax + 10-minute TTL.
+- **`accessToken` field has admin-only field access at the Payload layer.** Customers (who own the row) can read everything *else* on it — `username`, `accountType`, `tokenExpiresAt` — but not the token itself. The publish flow will read tokens through `overrideAccess: true` from server code; defense in depth so a stray REST/GraphQL read can never return cleartext (or even ciphertext) tokens to the browser.
+- **Encryption key derived via SHA-256 instead of consumed verbatim.** Lets `TOKEN_ENCRYPTION_KEY` be any string ≥ 32 chars (matching the env-file ergonomics of `PAYLOAD_SECRET`), and the SHA-256 output is always exactly 32 bytes — the right size for AES-256.
+- **Mock mode lives in the OAuth helpers, not in the routes.** Each helper has its own mock branch keyed off `isMockMode()`, so the route handlers stay free of conditional logic. Adds one line of "production code" overhead per helper for big debuggability wins.
+- **Refresh helper takes `overrideAccess: true` and is admin-gated at the route layer.** The function itself needs to scan across all customers' accounts and write to rows it doesn't "own" in the usual customer-scoped sense — so collection access is bypassed inside the function, and the caller is the access control gate. The admin route uses `isStaff(user)` (admin or system role) and returns 403 to anyone else.
 
 ### Acceptance criteria
 
-- [ ] Customer clicks "Connect Instagram", completes OAuth, lands back in the app with a connected account.
-- [ ] `accounts` row created with encrypted tokens, `accountType`, `platformUserId`.
-- [ ] Personal-account connection attempt shows a clear "convert to Business or Creator" error.
-- [ ] Token refresh job runs on schedule; tokens within the refresh window get renewed.
-- [ ] Access test: another customer cannot read this account's tokens.
+- [x] Customer clicks Connect Instagram, completes OAuth, lands back on the brand page connected (verified live against `INSTAGRAM_OAUTH_MOCK_ACCOUNT_TYPE=BUSINESS` — start route 302s to the callback, callback exchanges + writes the row, redirects to `/customer/brands/<id>?ig=connected`).
+- [x] `accounts` row created with encrypted `accessToken`, `accountType`, `platformUserId` (verified by inspecting the persisted row: token starts with `gcm:v1:` and decrypts back to the synthetic long-lived value).
+- [x] Personal-account refusal: with `INSTAGRAM_OAUTH_MOCK_ACCOUNT_TYPE=PERSONAL` the callback redirects to `?ig=personal_account_refused&ig_message=...` and the brand page renders the conversion-required alert with a link to Meta's docs.
+- [x] **Access test:** another customer cannot read the account row — enforced by `adminOrCustomerOwner` on the collection (filters by `owner.equals user.id`) and by the admin-only `accessToken` field-access predicate; both verified by signing in as a second customer who has 0 visible accounts attached to a brand they don't own.
+- [ ] **Deferred:** scheduled refresh job. The refresh **logic** is in place (`refreshExpiringInstagramTokens` + admin endpoint, tested by manual `POST` returning a sane `{ scanned, refreshed, failed, errors }` summary). What's deferred is the **scheduling**: cron orchestration isn't a thing in the current stack — Payload 3 has a jobs queue but no native cron, Celery/RabbitMQ are deferred per CLAUDE.md, and we're not on Vercel. The cleanest production path is a Docker cron sidecar that POSTs to `/api/admin/refresh-instagram-tokens` every ~6 hours, but that lands with the rest of the ops-tooling slice (alongside the cost-alert cron from #10). Until then, an admin can refresh manually by hitting the endpoint.
+
+### Notes for follow-on slices
+
+- **Publish flow (#13)** will read `accounts.accessToken` via the Local API with `overrideAccess: true`, decrypt with `decryptToken`, then call IG Graph API's media-container + `media_publish` endpoints. The collection / upsert logic here is the entry point.
+- **Real Meta App credentials** plug in by flipping `INSTAGRAM_OAUTH_MOCK=0` (or unset) and filling in `META_APP_ID`, `META_APP_SECRET`, `INSTAGRAM_REDIRECT_URI`. The redirect URI must exactly match what's registered in the Meta App Dashboard. No code changes required.
+- **Cron scheduling for refresh** — pick one of:
+  - Docker cron sidecar on the prod host (`curl -X POST -b cookie http://web:3000/api/admin/refresh-instagram-tokens` every 6h);
+  - System cron on the host;
+  - Payload jobs queue (Payload 3 supports tasks; cron-style scheduling isn't first-class yet but the queue + a tiny wakeup task works);
+  - Vercel cron — only if/when we migrate hosting.
+- **`PERSONAL` → `BUSINESS` conversion path.** The refusal alert links to Meta's docs. A future polish is to detect that an *existing* connected account's `accountType` flipped to something unsupported (e.g. via a periodic profile re-fetch) and surface the same conversion-required notice.
 
 ### Blocked by
 
