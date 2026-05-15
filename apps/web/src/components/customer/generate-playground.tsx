@@ -25,8 +25,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
-import type { GenerateResponse } from "@/lib/agents/schemas";
+import { Textarea } from "@/components/ui/textarea";
+import type { GenerateResponse, PromoKind } from "@/lib/agents/schemas";
 import { routes } from "@/lib/routes";
+
+const PROMO_OFF = "none";
+type PromoMode = typeof PROMO_OFF | PromoKind;
 
 export type BrandOption = {
   id: number;
@@ -44,6 +48,8 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [slideIdx, setSlideIdx] = useState(0);
+  const [promoMode, setPromoMode] = useState<PromoMode>(PROMO_OFF);
+  const [productInfo, setProductInfo] = useState("");
 
   if (brands.length === 0) {
     return (
@@ -86,10 +92,23 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
     setResult(null);
     setSlideIdx(0);
     try {
+      const promo =
+        promoMode === PROMO_OFF
+          ? undefined
+          : {
+              kind: promoMode,
+              ...(productInfo.trim()
+                ? { productInfo: productInfo.trim() }
+                : {}),
+            };
       const res = await fetch(routes.api.customer.generate(), {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ topic, brandId: Number(brandValue) }),
+        body: JSON.stringify({
+          topic,
+          brandId: Number(brandValue),
+          ...(promo ? { promo } : {}),
+        }),
       });
       const json = (await res.json()) as GenerateResponse | { error?: string };
       if (!res.ok) {
@@ -158,6 +177,54 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
               placeholder="3 design details that define…"
             />
           </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="promo-mode">Promo mode</Label>
+            <Select
+              value={promoMode}
+              onValueChange={(v) => setPromoMode(v as PromoMode)}
+            >
+              <SelectTrigger id="promo-mode">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={PROMO_OFF}>
+                  Off — regular content carousel
+                </SelectItem>
+                <SelectItem value="own_product">
+                  Own-product promo
+                </SelectItem>
+                <SelectItem value="affiliate">
+                  Affiliate promo
+                </SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Promo mode steers the writer toward Instagram-native CTA idioms
+              (&ldquo;link in bio&rdquo;, &ldquo;DM us&rdquo;, etc.) instead of
+              embedding URLs, and the reviewer enforces a recognized idiom
+              before shipping.
+            </p>
+          </div>
+
+          {promoMode !== PROMO_OFF && (
+            <div className="space-y-2">
+              <Label htmlFor="product-info">
+                Product info{" "}
+                <span className="font-normal text-muted-foreground">
+                  (optional, paste freely)
+                </span>
+              </Label>
+              <Textarea
+                id="product-info"
+                value={productInfo}
+                onChange={(e) => setProductInfo(e.target.value)}
+                placeholder="Product name, key features, audience fit, affiliate disclosure language…"
+                rows={4}
+              />
+            </div>
+          )}
+
           <Button
             onClick={onGenerate}
             disabled={loading || topic.trim().length < 3 || !brandValue}

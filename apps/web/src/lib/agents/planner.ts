@@ -7,13 +7,14 @@
 
 import { brandBriefText, type BrandLike } from "./brand";
 import { llm } from "./client";
-import { PlanSchema, type Plan } from "./schemas";
+import { RECOGNIZED_CTA_IDIOMS } from "./cta";
+import { PlanSchema, type Plan, type Promo } from "./schemas";
 
 const SYSTEM_TEMPLATE = `\
 You are a carousel planner. Read the brand brief, the requested topic, and
 (when provided) the brand's voice samples. Emit a 3-slide plan as JSON.
 
-{brief}{voiceHint}
+{brief}{voiceHint}{promoHint}
 
 Slide types you may use:
   - hook: a swipe-earning headline (templated)
@@ -31,6 +32,19 @@ When type is image_caption, set asset_query to 1-3 keywords matching the photo y
 Also produce a captionOutline (1-2 sentences for the post caption) and 3-6 hashtags (no leading #).
 `;
 
+function promoHint(promo: Promo | undefined): string {
+  if (!promo) return "";
+  const productInfo = promo.productInfo?.trim()
+    ? `\nProduct info the customer pasted (use it; don't invent details that aren't here):\n${promo.productInfo}`
+    : "";
+  const disclosure =
+    promo.kind === "affiliate"
+      ? "\nThis is an AFFILIATE promo — include or imply a light affiliate disclosure (e.g. 'partner pick', 'we earn a small commission')."
+      : "\nThis is the brand's own product — speak with first-person ownership.";
+  const idioms = RECOGNIZED_CTA_IDIOMS.slice(0, 6).join(", ");
+  return `\n\nPROMO INTENT:${disclosure}${productInfo}\n\nThe final CTA slide MUST drive action through one of the following Instagram-native idioms — never embed a URL:\n  ${idioms}\n`;
+}
+
 export type PlanStageResult = {
   plan: Plan;
   provider: string;
@@ -43,11 +57,13 @@ export async function planCarousel({
   topic,
   voiceSamples,
   assetsAvailable,
+  promo,
 }: {
   brand: BrandLike;
   topic: string;
   voiceSamples: string[];
   assetsAvailable: boolean;
+  promo?: Promo;
 }): Promise<PlanStageResult> {
   const voiceHint =
     voiceSamples.length > 0
@@ -56,6 +72,7 @@ export async function planCarousel({
 
   const system = SYSTEM_TEMPLATE.replace("{brief}", brandBriefText(brand))
     .replace("{voiceHint}", voiceHint)
+    .replace("{promoHint}", promoHint(promo))
     .replace(
       "{assetsAvailable}",
       assetsAvailable

@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#13 are done (with cuts noted per-issue); #14 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#14 are done (with cuts noted per-issue); #15 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -666,18 +666,60 @@ The job detail server page ([apps/web/src/app/(frontend)/customer/brands/[brandI
 
 ---
 
-## Issue 14 — Affiliate / promo flow with platform-correct CTAs
+## Issue 14 — Affiliate / promo flow with platform-correct CTAs ✅ DONE
 
-### What to build
+### What was built
 
-When the customer requests a "promo" content-job (with optional product info pasted manually — no URL scraper in MVP-1), the writer prompt path emits platform-correct call-to-action language ("link in bio", "comment WORD for the link", "swipe up in stories") rather than embedding raw URLs in captions. Reviewer's CTA-presence check confirms one of the recognized idioms. No bio-link management in MVP-1 — that's deferred.
+Promo intent now flows from the generate request through every pipeline stage, with three layered defenses against the failure mode the issue is really about: a promo post that ships with a raw URL and no recognizable CTA.
+
+**Schema ([apps/web/src/lib/agents/schemas.ts](apps/web/src/lib/agents/schemas.ts)).** New `PromoSchema` (`kind: "affiliate" | "own_product"`, optional `productInfo: string`) attached to `GenerateRequestSchema.promo` and threaded into `RunPipelineInput`. The `inputPayload` snapshot on the content-jobs row now includes the promo block when present, so a job's intent is recoverable from a single read for replay / debugging.
+
+**CTA library ([apps/web/src/lib/agents/cta.ts](apps/web/src/lib/agents/cta.ts)).** A single source of truth — 15 recognized Instagram CTA idioms (`link in bio`, `tap the link in our bio`, `comment {WORD} for the link`, `dm us`, `check our stories`, etc.) — consumed by:
+
+1. **Planner prompt:** when `promo` is present, the system prompt grows a `PROMO INTENT:` block that names the kind, includes any product info verbatim, instructs the planner that the CTA slide must use one of the listed idioms, and adds an affiliate-disclosure cue when relevant.
+2. **Writer prompt:** the URL prohibition becomes a hard, explicitly-flagged constraint that *overrides any brand-tone instruction* (the previous slice ran into a brand whose tone said "always include the URL" and the writer obediently embedded one — that conflict is now resolved in the writer's favor against URLs). When `promo` is on, the writer also gets the idiom list and a disclosure cue.
+3. **Reviewer prompt:** `cta_missing` and `url_in_copy` checks gain promo-specific guidance, and after the LLM returns, a deterministic `findCtaIdiom()` scan of caption + slide copy runs as a hard check — if it returns null AND `promo` was set, the reviewer's verdict is forced to `revise` and a `cta_missing` issue with the idiom list is appended. The model can be generous; the regex can't.
+4. **URL strip helper:** `stripUrlsFromDraft()` runs on the writer's output regardless of whether `promo` was set. Catches `https://`, `www.`, and bare-domain forms (`example.com/path`). Defense in depth — even if both prompts fail, the persisted DraftPayload never carries a URL.
+
+**Pipeline ([apps/web/src/lib/agents/pipeline.ts](apps/web/src/lib/agents/pipeline.ts)).** Plumbing-only: `RunPipelineInput.promo` flows into `planCarousel`, both `writeCarousel` calls (initial + revision), and `reviewDraft`. The revision path inherits the same promo context so the writer-on-revision doesn't lose the constraint between attempts.
+
+**API ([apps/web/src/app/(frontend)/api/customer/generate/route.ts](apps/web/src/app/(frontend)/api/customer/generate/route.ts)).** Forwards `parsed.data.promo` to `runPipeline`. Validation is by `GenerateRequestSchema` — a malformed promo block returns 400 with the Zod issue list, same surface the rest of the request uses.
+
+**UI ([apps/web/src/components/customer/generate-playground.tsx](apps/web/src/components/customer/generate-playground.tsx)).** The Brief card grows a **Promo mode** select (Off / Own-product promo / Affiliate promo) and, when promo is on, a **Product info** textarea for free-form pasting (product name, key features, audience fit, disclosure language). The hint copy explains the trade in one line: idioms instead of URLs, reviewer enforces.
+
+### Implementation notes (as built)
+
+- `apps/web/src/lib/agents/cta.ts` — CTA idiom list, `findCtaIdiom()` (regex-based with `{WORD}` wildcard), `stripUrls()` + `stripUrlsFromDraft()`.
+- `apps/web/src/lib/agents/schemas.ts` — `PROMO_KINDS`, `PromoSchema`, `Promo` type, optional `promo` on `GenerateRequestSchema`.
+- `apps/web/src/lib/agents/planner.ts` — `promoHint(promo)` injects into system prompt; `planCarousel` accepts `promo`.
+- `apps/web/src/lib/agents/writer.ts` — system prompt's URL policy is now a HARD CONSTRAINT block; `writerPromoHint(promo)` adds idiom guidance + disclosure cue; output runs through `stripUrlsFromDraft()` before validation.
+- `apps/web/src/lib/agents/reviewer.ts` — `reviewerPromoHint(promo)` strengthens prompt; deterministic `findCtaIdiom()` post-check forces revise when promo is on but no idiom is detected.
+- `apps/web/src/lib/agents/pipeline.ts` — threads `promo` into all four stage calls and snapshots it on `inputPayload`.
+- `apps/web/src/app/(frontend)/api/customer/generate/route.ts` — passes `parsed.data.promo` to the pipeline.
+- `apps/web/src/components/customer/generate-playground.tsx` — Promo mode select + conditional Product info textarea + serialization in the POST body.
+
+### Architectural decisions made during build
+
+- **CTA idiom library is the single source of truth, not three copies.** Same constant feeds the planner prompt, the writer prompt, and the reviewer's deterministic post-check. Adding a new idiom (or removing an obsolete one — *"swipe up in stories"* is dead post-2021, deliberately omitted) is a one-line change.
+- **URL strip is unconditional, not promo-only.** The previous slice already had a soft URL prohibition in the writer prompt that small models leaked through. Stripping unconditionally costs nothing on non-promo carousels (where URLs shouldn't appear anyway) and removes a class of failure for promo ones. The reviewer's `url_in_copy` check still runs and catches edge cases the regex misses (e.g. obfuscated forms), but persistence-time the DraftPayload is clean.
+- **Deterministic reviewer post-check, not "ask the model again."** The LLM might say `cta_present: true` because some slide says "Reach out!" — that's not a CTA Instagram users recognize. The regex scan for one of 15 named idioms is the hard signal. Keeps the model's role as a content judge, not an idiom matcher.
+- **Hard-constraint framing in the writer prompt.** "Don't include URLs" was advisory; "URL POLICY (HARD CONSTRAINT — overrides any brand-tone instruction)" is unambiguous and resolves the prompt-vs-instructions conflict that the Issue #10 notes flagged. The writer now treats the brand brief as a guide subject to platform constraints, not the other way around.
+- **`{WORD}` is a regex wildcard, not a literal.** "comment WORD for the link" is the canonical English; the regex matches `comment fly for the link`, `comment YES for the link`, etc. Lets brands customize the trigger word without falling out of the recognized set.
+- **`PROMO_OFF` sentinel in the UI.** Shadcn `Select` doesn't accept `value=""` for an "unselected" state, so we use a literal `"none"` value the form translates to `undefined` in the request body. Three discrete, named states (off / own / affiliate) are easier to reason about than a checkbox + radio combo.
 
 ### Acceptance criteria
 
-- [ ] Requesting a promo carousel produces output containing one of the recognized CTA idioms.
-- [ ] Output passes the reviewer's CTA-presence check.
-- [ ] Output does NOT contain raw URLs in captions or slide overlays.
-- [ ] At least one example each: affiliate promo (third-party product), and own-product promo, working end-to-end.
+- [x] Requesting a promo carousel produces output containing one of the recognized CTA idioms (verified across own-product and affiliate flows; the deterministic check forces a `revise` if it doesn't, and the writer-on-revision picks an idiom from the list).
+- [x] Output passes the reviewer's CTA-presence check (`cta_present: true` on ship; on `revise` the editor surfaces the missing-idiom issue inline next to the carousel).
+- [x] Output does **not** contain raw URLs in captions or slide overlays — `stripUrlsFromDraft()` runs on every writer pass; the test brand brief that was injecting `https://example.com` no longer ships URLs in either surface.
+- [x] At least one example each — own-product and affiliate — runs end-to-end through plan → write → review → ready, with the appropriate disclosure cue (own-product first-person, affiliate "partner pick"-style language).
+
+### Notes for follow-on slices
+
+- **Bio-link management** (deferred per the issue) is the next natural step: a `Brand.bioLink` field that the CTA slide can refer to ("link in bio") with a corresponding "tap to set" affordance on the brand page. Out of scope here.
+- **Hashtag tuning for promo posts.** Promo carousels often want a partnership tag (`#ad`, `#sponsored`, `#partner`). The writer's hashtags array is plain free-form right now; a small tweak in the writer prompt would steer at least one of the 3-6 hashtags to a disclosure tag when `kind = affiliate`.
+- **Idiom localization.** All current idioms are English. When the platform supports multiple brand languages (post-MVP-1), the idiom library should key by language and the reviewer's deterministic check should choose the matching set.
+- **Reviewer hard checks beyond CTA.** Same pattern (LLM judges content, regex enforces format) extends naturally to: hashtag count caps, slide-length bounds, banned-word lists. The `findCtaIdiom`/post-check pattern in `reviewer.ts` is the template.
 
 ### Blocked by
 

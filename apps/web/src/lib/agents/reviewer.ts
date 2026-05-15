@@ -9,23 +9,26 @@
 
 import { brandBriefText, type BrandLike } from "./brand";
 import { llm } from "./client";
+import { findCtaIdiom, RECOGNIZED_CTA_IDIOMS } from "./cta";
 import {
   ReviewSchema,
   type DraftPayload,
+  type Promo,
   type Review,
+  type ReviewIssue,
 } from "./schemas";
 
 const SYSTEM_TEMPLATE = `\
 You are the brand's editor. You critique a finished carousel draft against
 the brand brief and the voice samples. Be tough but specific.
 
-{brief}{voiceHint}
+{brief}{voiceHint}{promoHint}
 
 Check for:
   - brand_voice  — does each slide sound like the brand? Tone, vocabulary, rhythm.
   - factual_claim — any claim a casual fact-check would dispute? Flag specific spans.
-  - cta_missing  — is there a clear call-to-action (closing line) in one slide?
-  - url_in_copy  — Instagram blocks URLs in slides; flag any.
+  - cta_missing  — is there a clear call-to-action (closing line)? In a promo, it MUST use one of the recognized Instagram-native idioms (e.g. "link in bio").
+  - url_in_copy  — Instagram blocks URLs in slides AND de-prioritizes them in captions. Flag any.
   - length       — slides too long or too short for their type?
   - other        — anything else that would embarrass the brand.
 
@@ -39,6 +42,16 @@ Return JSON with:
 Be decisive. If the draft is fine, ship it.
 `;
 
+function reviewerPromoHint(promo: Promo | undefined): string {
+  if (!promo) return "";
+  const idioms = RECOGNIZED_CTA_IDIOMS.slice(0, 6).join(", ");
+  const disclosure =
+    promo.kind === "affiliate"
+      ? "\n  - This is an AFFILIATE post — confirm the caption signals a partnership/disclosure (\"partner pick\", \"we earn a small commission\", or similar)."
+      : "";
+  return `\n\nPROMO REVIEW (extra requirements for promo posts):\n  - The CTA slide must use one of: ${idioms}.${disclosure}\n  - URLs are not allowed; the CTA must rely on these idioms instead.\n`;
+}
+
 export type ReviewStageResult = {
   review: Review;
   provider: string;
@@ -50,20 +63,21 @@ export async function reviewDraft({
   brand,
   draft,
   voiceSamples,
+  promo,
 }: {
   brand: BrandLike;
   draft: DraftPayload;
   voiceSamples: string[];
+  promo?: Promo;
 }): Promise<ReviewStageResult> {
   const voiceHint =
     voiceSamples.length > 0
       ? `\n\nVoice samples for reference:\n\n${voiceSamples.map((s, i) => `[${i + 1}] ${s}`).join("\n\n")}\n`
       : "";
 
-  const system = SYSTEM_TEMPLATE.replace("{brief}", brandBriefText(brand)).replace(
-    "{voiceHint}",
-    voiceHint,
-  );
+  const system = SYSTEM_TEMPLATE.replace("{brief}", brandBriefText(brand))
+    .replace("{voiceHint}", voiceHint)
+    .replace("{promoHint}", reviewerPromoHint(promo));
 
   const result = await llm.object({
     stage: "reviewer",
@@ -81,6 +95,26 @@ export async function reviewDraft({
     review = { ...review, issues: [] };
   } else if (review.verdict === "revise" && review.issues.length === 0) {
     review = { ...review, verdict: "ship" };
+  }
+
+  // Deterministic CTA-idiom check: scan slide copy + caption against the
+  // known idiom list. The model is the primary judge of "is there a real
+  // CTA?", but in promo mode we layer a hard, code-driven check so a
+  // missing idiom can't slip through with a generous reviewer.
+  const ctaIdiom = findCtaIdiom(
+    [draft.caption, ...draft.slides.map((s) => s.copy)].join("\n"),
+  );
+  if (promo && !ctaIdiom) {
+    const issue: ReviewIssue = {
+      kind: "cta_missing",
+      slideIndex: -1,
+      message: `Promo posts must close with one of these Instagram CTA idioms: ${RECOGNIZED_CTA_IDIOMS.slice(0, 4).join(", ")}.`,
+    };
+    review = {
+      verdict: "revise",
+      cta_present: false,
+      issues: [...review.issues, issue],
+    };
   }
 
   return {

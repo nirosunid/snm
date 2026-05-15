@@ -114,9 +114,29 @@ export const ReviewRecordSchema = ReviewSchema.extend({
 });
 export type ReviewRecord = z.infer<typeof ReviewRecordSchema>;
 
+/** Promo intent: signals to the planner / writer that this carousel is
+ *  selling something, and steers the CTA away from raw URLs (which IG
+ *  blocks in slide overlays and de-prioritizes in captions). */
+export const PROMO_KINDS = ["affiliate", "own_product"] as const;
+export const PromoKindSchema = z.enum(PROMO_KINDS);
+export type PromoKind = z.infer<typeof PromoKindSchema>;
+
+export const PromoSchema = z.object({
+  kind: PromoKindSchema,
+  productInfo: z
+    .string()
+    .max(2000)
+    .optional()
+    .describe(
+      "Free-form notes the customer pasted: product name, key features, audience fit, affiliate disclosure language, etc. No URL scraper in MVP-1.",
+    ),
+});
+export type Promo = z.infer<typeof PromoSchema>;
+
 export const GenerateRequestSchema = z.object({
   topic: z.string().min(3).max(300),
   brandId: z.union([z.number().int().positive(), z.string().min(1)]).optional(),
+  promo: PromoSchema.optional(),
 });
 export type GenerateRequest = z.infer<typeof GenerateRequestSchema>;
 

@@ -24,7 +24,7 @@ import {
 import { estimateStageCost, sumCosts, type StageCost } from "./cost";
 import { planCarousel } from "./planner";
 import { formatIssuesForWriter, reviewDraft } from "./reviewer";
-import type { GenerateResponse, ReviewRecord } from "./schemas";
+import type { GenerateResponse, Promo, ReviewRecord } from "./schemas";
 import { writeCarousel } from "./writer";
 
 const MAX_REVISIONS = 1;
@@ -34,6 +34,7 @@ export type RunPipelineInput = {
   brandId?: number;
   user: User;
   voiceK?: number;
+  promo?: Promo;
 };
 
 export async function runPipeline(
@@ -67,7 +68,11 @@ export async function runPipeline(
       owner: input.user.id,
       topic: input.topic,
       status: "queued",
-      inputPayload: { topic: input.topic, brandId: input.brandId },
+      inputPayload: {
+        topic: input.topic,
+        brandId: input.brandId,
+        ...(input.promo ? { promo: input.promo } : {}),
+      },
     },
     overrideAccess: false,
     user: input.user,
@@ -108,6 +113,7 @@ export async function runPipeline(
         topic: input.topic,
         voiceSamples,
         assetsAvailable,
+        promo: input.promo,
       });
       stageCosts.push(
         estimateStageCost({
@@ -129,6 +135,7 @@ export async function runPipeline(
         brandId: input.brandId,
         plan: planResult.plan,
         user: input.user,
+        promo: input.promo,
       });
       stageCosts.push(
         estimateStageCost({
@@ -149,6 +156,7 @@ export async function runPipeline(
         brand,
         draft: writeResult.draft,
         voiceSamples,
+        promo: input.promo,
       });
       stageCosts.push(
         estimateStageCost({
@@ -178,6 +186,7 @@ export async function runPipeline(
           plan: planResult.plan,
           user: input.user,
           feedback: formatIssuesForWriter(reviewResult.review.issues),
+          promo: input.promo,
         });
         finalDraft = revised.draft;
         stageCosts.push(

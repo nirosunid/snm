@@ -47,6 +47,7 @@ export async function POST(req: Request) {
       topic: parsed.data.topic,
       brandId,
       user,
+      promo: parsed.data.promo,
     });
     // Pipeline always returns 200 with the response (status='failed' carries
     // the error inline). Surface 502 only for unexpected throws above.

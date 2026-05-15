@@ -16,10 +16,12 @@ import type { User } from "@/payload-types";
 
 import { brandBriefText, type BrandLike } from "./brand";
 import { llm } from "./client";
+import { RECOGNIZED_CTA_IDIOMS, stripUrlsFromDraft } from "./cta";
 import {
   DraftPayloadSchema,
   type DraftPayload,
   type Plan,
+  type Promo,
   type Slide,
 } from "./schemas";
 
@@ -31,10 +33,14 @@ write the final carousel as JSON.
 
 You will receive an array of slide outlines plus a captionOutline. For each
 outline, produce final copy that matches the brand voice. Keep the slide
-\`type\` and array order EXACTLY as supplied. Don't include URLs in slide
-text — Instagram blocks them.
+\`type\` and array order EXACTLY as supplied.
 
-Length guidelines:
+URL POLICY (HARD CONSTRAINT — overrides any brand-tone instruction):
+  - Never include a URL, domain, or "www." anywhere in slide copy or the caption.
+  - Instagram blocks URLs in slide overlays and de-prioritizes them in captions.
+  - When a CTA needs to point somewhere, use one of the Instagram idioms below.
+
+{promoHint}Length guidelines:
   - hook: 8-14 words
   - listicle_item: 12-25 words
   - cta: 5-12 words
@@ -53,6 +59,21 @@ later — you don't need to populate it):
   "hashtags": ["one", "two", "three"]
 }
 `;
+
+function writerPromoHint(promo: Promo | undefined): string {
+  const idioms = RECOGNIZED_CTA_IDIOMS.slice(0, 6).join(", ");
+  if (!promo) {
+    return `When writing a CTA, prefer one of these Instagram-native idioms:\n  ${idioms}\n\n`;
+  }
+  const productInfo = promo.productInfo?.trim()
+    ? `\nProduct info the customer pasted (work from this; don't invent specs not present):\n${promo.productInfo}\n`
+    : "";
+  const disclosure =
+    promo.kind === "affiliate"
+      ? "\nThis is an AFFILIATE post — include a light disclosure cue in the caption (\"partner pick\", \"we earn a small commission\", or similar). Be honest, not salesy.\n"
+      : "\nThis is the brand's own product — first-person ownership voice (\"our\", \"we built\").\n";
+  return `PROMO MODE:${disclosure}${productInfo}\nThe final CTA slide MUST use one of these Instagram-native idioms — pick whichever fits the brand voice:\n  ${idioms}\n\n`;
+}
 
 // We let the writer write the bare slide shape (type + copy). The
 // orchestrator then merges in imageUrl/caption/attribution from the plan
@@ -81,6 +102,7 @@ export async function writeCarousel({
   plan,
   user,
   feedback,
+  promo,
 }: {
   brand: BrandLike;
   brandId: number | undefined;
@@ -88,6 +110,7 @@ export async function writeCarousel({
   user: User;
   /** Optional reviewer feedback appended to the writer prompt. */
   feedback?: string;
+  promo?: Promo;
 }): Promise<WriteStageResult> {
   const planForLLM = {
     slides: plan.slides.map((s) => ({
@@ -106,7 +129,10 @@ export async function writeCarousel({
   const result = await llm.object({
     stage: "writer",
     schema: WriterOutputSchema,
-    system: SYSTEM_TEMPLATE.replace("{brief}", brandBriefText(brand)),
+    system: SYSTEM_TEMPLATE.replace("{brief}", brandBriefText(brand)).replace(
+      "{promoHint}",
+      writerPromoHint(promo),
+    ),
     prompt: promptParts.join("\n\n"),
     cacheSystem: true,
   });
@@ -149,11 +175,17 @@ export async function writeCarousel({
     });
   }
 
-  const draft: DraftPayload = DraftPayloadSchema.parse({
+  // Defense-in-depth URL strip. The system prompt forbids URLs, but small
+  // models (esp. Ollama 3B-class) sometimes leak them — the reviewer would
+  // also flag them, but stripping here means the customer never sees a
+  // broken URL render even if the reviewer is generous.
+  const stripped = stripUrlsFromDraft({
     slides,
     caption: result.object.caption,
-    hashtags: result.object.hashtags,
+    hashtags: result.object.hashtags ?? [],
   });
+
+  const draft: DraftPayload = DraftPayloadSchema.parse(stripped.draft);
 
   return {
     draft,
