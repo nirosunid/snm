@@ -71,6 +71,24 @@ export default async function JobDetailPage({ params }: Props) {
       : job.brand;
   if (jobBrandId !== brand.id) notFound();
 
+  const { docs: accounts } = await payload.find({
+    collection: "accounts",
+    user,
+    overrideAccess: false,
+    where: {
+      brand: { equals: brand.id },
+      platform: { equals: "instagram" },
+    },
+    sort: "-connectedAt",
+    limit: 20,
+    depth: 0,
+  });
+  const accountOptions = accounts.map((a) => ({
+    id: a.id,
+    username: a.username,
+    accountType: a.accountType,
+  }));
+
   const draftParse = DraftPayloadSchema.safeParse(job.draftPayload);
   const reviewParse = ReviewRecordSchema.safeParse(job.review);
   const draft = draftParse.success ? draftParse.data : null;
@@ -134,6 +152,8 @@ export default async function JobDetailPage({ params }: Props) {
           status={job.status}
           initialDraft={draft}
           review={review}
+          accounts={accountOptions}
+          publishedMediaId={job.publishedMediaId ?? null}
         />
       )}
     </div>

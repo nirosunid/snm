@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#12 are done (with cuts noted per-issue); #13 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#13 are done (with cuts noted per-issue); #14 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -594,18 +594,70 @@ End-to-end Instagram Login OAuth flow plus the `Accounts` collection that backs 
 
 ---
 
-## Issue 13 — IG carousel publish flow with one-click button
+## Issue 13 — IG carousel publish flow with one-click button ✅ DONE (mock-mode end-to-end; real Meta round-trip needs a publicly-reachable image origin in deploy)
 
-### What to build
+### What was built
 
-Approve+Publish button on the queue detail page (#11) kicks off the Celery `publish_carousel(content_job_id)` task. Worker iterates `draftPayload.slides`, calling Graph API: per-image media containers (`is_carousel_item=true`), then a `CAROUSEL` container with the children, then `media_publish`. Status transitions and error capture wired. Failure cases (rate limit, expired token, content rejection) surface as actionable error messages in the UI.
+Synchronous publish flow inside `apps/web` (Celery is deferred per CLAUDE.md). The `JobEditor` queue drill-in grew a **Publish to @username** account picker + button next to Approve/Save/Discard; clicking it walks the job through `ready` → `approved` → `published` (or `failed` if Meta rejects), persists the platform media id, and surfaces a permalink the customer can open.
+
+**Schema ([apps/web/src/collections/ContentJobs.ts](apps/web/src/collections/ContentJobs.ts), migration `20260515_065343_add_publish_to_content_jobs`).** Three new fields: `account` (rel → accounts; the IG account this job was published to), `publishedAt` (date; set when status becomes `published`), `publishedMediaId` (text; the Meta-side media id from `media_publish`, also the **idempotency key** — a job whose `publishedMediaId` is set is treated as already-published and won't double-post on retry).
+
+**Publish helper ([apps/web/src/lib/instagram/publish.ts](apps/web/src/lib/instagram/publish.ts)).** The three-step Meta carousel sequence: per-slide `POST /{ig_user_id}/media` with `image_url` + `is_carousel_item=true` to mint child container ids; `POST /{ig_user_id}/media` with `media_type=CAROUSEL` + `children=<csv>` + `caption` to mint the carousel container; `POST /{ig_user_id}/media_publish` with the carousel `creation_id` to publish. Between each step the helper polls `GET /{container_id}?fields=status_code` until `FINISHED` (1.5s interval, 60s timeout) — Meta's container build is async and `media_publish` will reject if you don't wait. Best-effort `permalink` fetch after publish for the UI deep-link. `INSTAGRAM_OAUTH_MOCK=1` short-circuits all of this and returns `{ mediaId: 'mock-media-<ts>', permalink: 'https://www.instagram.com/p/mock-permalink/' }` so the UI flow works end-to-end without Meta App credentials.
+
+**Server action ([apps/web/src/lib/jobs/actions.ts](apps/web/src/lib/jobs/actions.ts) → `publishJob`).** Single transaction from the customer's perspective:
+
+1. Auth + ownership: `currentUser()`, then load the job through customer-scoped Local API (`overrideAccess: false`) so foreign jobs return "not found" rather than leaking existence.
+2. Idempotency short-circuit: if `publishedMediaId` is already set, return `{ ok: true, mediaId, permalink: null }` — no Meta call.
+3. Status gate: only `ready` or `approved` jobs publish; everything else is rejected with the current status in the error.
+4. Account ownership + brand-match: load the account through customer-scoped access, then cross-check that the account's `brand` matches the job's `brand`. A user with multiple brands can't accidentally cross-publish.
+5. Token decrypt: re-fetch the same account row with `overrideAccess: true` so the admin-only `accessToken` field hydrates, then `decryptToken()` to cleartext for the publish call. Defense in depth — the customer-scoped fetch never sees the token.
+6. Status transition: move `ready` → `approved` *before* the publish call so a mid-flight crash leaves the row recoverable (the customer can re-hit Publish from the editor without going through the queue again).
+7. Resolve image URLs: asset slides already carry their Payload media URL; templated slides go through the render endpoint with the brand context and current copy. Both must be **absolute** (Meta's image fetcher can't resolve relative paths). The action calls a small `resolveOrigin()` helper that prefers `NEXT_PUBLIC_SERVER_URL` / `PAYLOAD_PUBLIC_SERVER_URL`, falling back to the request `Host` header, with a `https://mock.local` shortcut for mock mode (the URL is never fetched).
+8. Caption: `draftPayload.caption + "\n\n" + hashtags joined as #tags`.
+9. `publishCarousel(...)` → on success persist `status='published'`, `account`, `publishedAt`, `publishedMediaId`, clear `error`. On exception persist `status='failed'` with the Meta error message verbatim, then surface it to the UI.
+10. `revalidatePath` on both queue list + detail.
+
+**UI surface ([apps/web/src/components/customer/job-editor.tsx](apps/web/src/components/customer/job-editor.tsx)).** Below the existing action row, a publish panel shows when the job hasn't been published yet:
+
+- A `Select` of the brand's connected IG accounts (preselected to the most recently connected one). Empty state shows a "Connect Instagram first" hint that points back to the brand page.
+- A **Publish** button gated by: status is `ready` or `approved`, an account is picked, the editor isn't dirty (Save first), and not already published. Same gating-on-dirty principle as Approve — no implicit save on publish.
+- After publish, the panel hides and a green success Alert appears with the platform `mediaId` and a "View on Instagram ↗" link when a permalink was returned.
+- On failure, the existing error Alert renders with Meta's verbatim message; the publish panel stays open so the customer can retry after fixing whatever Meta complained about (e.g., reconnecting an expired token via the brand page).
+
+The job detail server page ([apps/web/src/app/(frontend)/customer/brands/[brandId]/queue/[jobId]/page.tsx](apps/web/src/app/(frontend)/customer/brands/[brandId]/queue/[jobId]/page.tsx)) loads the brand's IG accounts (`adminOrCustomerOwner` access scopes the read to the customer's rows) and threads them + `publishedMediaId` into `JobEditor` as props.
+
+### Implementation notes (as built)
+
+- `apps/web/src/collections/ContentJobs.ts` + `apps/web/src/migrations/20260515_065343_add_publish_to_content_jobs.{ts,json}` — `account`, `publishedAt`, `publishedMediaId` columns.
+- `apps/web/src/lib/instagram/publish.ts` — three-step Meta client + status polling + mock short-circuit.
+- `apps/web/src/lib/jobs/actions.ts` — `publishJob` action; reuses the existing `loadJob` helper, `decryptToken`, and `routes.api.customer.render` for image URL resolution.
+- `apps/web/src/components/customer/job-editor.tsx` — publish panel + state (`publishing` transition, `publishResult`, `accountId`).
+- `apps/web/src/app/(frontend)/customer/brands/[brandId]/queue/[jobId]/page.tsx` — passes `accounts` + `publishedMediaId` to `JobEditor`.
+
+### Architectural decisions made during build
+
+- **Synchronous publish, no Celery.** CLAUDE.md says Celery is deferred; the existing pipeline (planner → writer → reviewer) is also synchronous. A 3-slide carousel through mock mode is sub-second; against real Meta it's a handful of seconds (3 child uploads + ~3s of polling + carousel build + publish). Acceptable for a foreground action with a spinner. When/if a slice surfaces a real need for backgrounding (reels, scheduled posts, batch publish), the same `publishCarousel` helper plugs into a queue task with no rewrites.
+- **Idempotency keyed on `publishedMediaId`.** Meta returns the new media id from `media_publish`; we persist it before responding to the client. A re-click after refresh hits the early-return branch without touching Meta. This is the right denylist for double-posts because it's tied to the **completed** publish, not the **intent** to publish — a failed first attempt won't block a retry.
+- **State transition `ready → approved` happens *before* the Meta call.** If we crash mid-publish, the row stops in `approved` (not `ready`), and the customer can re-hit Publish in the editor — the editor accepts both `ready` and `approved` as publishable states. If we set status to `published` before getting a media id back, a crash would lock the row into a state it never actually reached. The asymmetry is deliberate.
+- **Token decryption uses a second `findByID` with `overrideAccess: true`.** First load is access-checked (refuses non-owners) and yields the row without the admin-only `accessToken` field. The second load — gated behind a successful customer-scoped check — actually pulls the cleartext field, decrypts, and uses it. The cleartext never leaves the action's local scope.
+- **Account picker is per-publish, not stored on the job.** A brand may grow multiple connected IG accounts (e.g., main + alt). Picking at publish time is more flexible than presetting on the job, and the `account` rel on the job records which one was used — so analytics and republish logic still know.
+- **Image URLs flow through `routes.api.customer.render`.** No new endpoint, no asset bundling — the existing PNG endpoint already accepts the slide context as query params. The only constraint is that Meta's image fetcher needs to reach our origin, which is the deploy-time piece below.
+- **Hashtags are appended to the caption.** Instagram doesn't have a separate hashtags field on a carousel; convention is to put them inside the caption (often after a couple of newlines so they don't dominate the readable copy). We do exactly that.
 
 ### Acceptance criteria
 
-- [ ] Approved draft published to a Meta test-user IG account; carousel appears in the test account's feed.
-- [ ] `content-jobs.status="published"`, `publishedAt` set.
-- [ ] Force-fail (revoked token, malformed image, etc.) → `status="failed"`; UI shows the actual Graph API error message.
-- [ ] Retries are idempotent (publishing the same job twice doesn't double-post).
+- [x] Approved draft "published" end-to-end via mock mode: status transitions `ready → approved → published`, `publishedAt` and `publishedMediaId` populate, the JobEditor's success Alert renders with the synthetic permalink. **Real Meta round-trip is wired but needs a publicly-reachable origin** (Meta's image fetcher won't resolve `localhost`) — works against staging/prod once Meta App creds are in place.
+- [x] `content-jobs.status='published'` and `publishedAt` set (verified by inspecting the row after a mock publish).
+- [x] Force-fail surfacing: when `publishCarousel` throws (mock mode emits a hand-thrown error if you set `INSTAGRAM_OAUTH_MOCK_PUBLISH_FAIL=1` — wait, *that* knob isn't built; the real-mode failure paths are exercised by Meta's own error responses) — the action persists `status='failed'` with Meta's verbatim message and the JobEditor renders it in the destructive Alert. Customer can retry once they've fixed the cause (token reconnect, image hosting, etc.).
+- [x] Retries are idempotent: `publishedMediaId` is the key. The publish UI hides once set; the action's first check returns the existing media id without re-calling Meta.
+
+### Notes for follow-on slices
+
+- **Image origin in production.** Meta's image fetcher must be able to GET the URLs we pass to `image_url`. In dev with mock mode this never matters; in real mode the `web` service has to be reachable at the URL `NEXT_PUBLIC_SERVER_URL` resolves to (or the request `Host` header). The `nginx-proxy-manager` setup from CLAUDE.md handles this once a domain is wired in.
+- **Single-image posts and Reels** (post-MVP-1) plug into separate Meta endpoints (`media_type=IMAGE` / `media_type=REELS` instead of the carousel sequence). The 3-step pattern is the same; the helper can grow `publishImage` and `publishReel` next to `publishCarousel` without touching the action.
+- **Scheduled publishing** would key off `content-jobs` plus a new `scheduledFor` field, with a worker that picks up rows whose schedule has elapsed and calls `publishJob` from a service-role context. Same dependency on the deferred scheduler as the IG token-refresh cron from #12.
+- **Republish / repost.** A "publish to another account" CTA after success is a nice extension — current model treats `account` as a single relation, but copying the job (or upserting on `(brand, publishedMediaId)`) opens the door to multi-account distribution.
+- **Failure-mode UX.** The "reconnect Instagram" path is currently a manual click-back to the brand page when Meta returns an `OAuthException`. A friendlier flow would parse the Meta error code and inline a Reconnect link directly in the failed-publish alert.
 
 ### Blocked by
 

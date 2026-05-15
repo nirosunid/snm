@@ -31,8 +31,16 @@ import {
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
   approveJob,
   discardJob,
+  publishJob,
   saveDraftEdits,
 } from "@/lib/jobs/actions";
 import { routes } from "@/lib/routes";
@@ -42,12 +50,20 @@ import type {
   ReviewRecord,
 } from "@/lib/agents/schemas";
 
+export type AccountOption = {
+  id: number;
+  username: string;
+  accountType: "business" | "media_creator";
+};
+
 type Props = {
   jobId: number;
   brandId: number;
   status: "queued" | "generating" | "ready" | "approved" | "published" | "failed";
   initialDraft: DraftPayload;
   review: ReviewRecord | null;
+  accounts: AccountOption[];
+  publishedMediaId: string | null;
 };
 
 export function JobEditor({
@@ -56,6 +72,8 @@ export function JobEditor({
   status,
   initialDraft,
   review,
+  accounts,
+  publishedMediaId,
 }: Props) {
   const router = useRouter();
   const [draft, setDraft] = useState<DraftPayload>(initialDraft);
@@ -63,10 +81,23 @@ export function JobEditor({
   const [saving, startSave] = useTransition();
   const [approving, startApprove] = useTransition();
   const [discarding, startDiscard] = useTransition();
+  const [publishing, startPublish] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<number | null>(null);
+  const [publishResult, setPublishResult] = useState<{
+    mediaId: string;
+    permalink: string | null;
+  } | null>(null);
+  const [accountId, setAccountId] = useState<string>(
+    accounts.length > 0 ? String(accounts[0].id) : "",
+  );
 
   const editable = status === "ready";
+  const canPublish =
+    (status === "ready" || status === "approved") &&
+    accounts.length > 0 &&
+    !publishedMediaId;
+  const alreadyPublished = status === "published" || Boolean(publishedMediaId);
   const slide = draft.slides[Math.min(slideIdx, draft.slides.length - 1)];
   const dirty = useMemo(
     () => JSON.stringify(draft) !== JSON.stringify(initialDraft),
@@ -134,6 +165,29 @@ export function JobEditor({
         setError(res.error);
         return;
       }
+      router.refresh();
+    });
+  }
+
+  function onPublish() {
+    setError(null);
+    setPublishResult(null);
+    if (dirty) {
+      setError("Save your edits first, then publish.");
+      return;
+    }
+    const id = Number(accountId);
+    if (!Number.isInteger(id) || id <= 0) {
+      setError("Pick an Instagram account first.");
+      return;
+    }
+    startPublish(async () => {
+      const res = await publishJob({ jobId, accountId: id });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      setPublishResult({ mediaId: res.mediaId, permalink: res.permalink });
       router.refresh();
     });
   }
@@ -270,65 +324,135 @@ export function JobEditor({
 
         {error && (
           <Alert variant="destructive">
-            <AlertTitle>Couldn&apos;t save</AlertTitle>
+            <AlertTitle>Action failed</AlertTitle>
             <AlertDescription className="break-words whitespace-pre-wrap">
               {error}
             </AlertDescription>
           </Alert>
         )}
 
+        {alreadyPublished && (
+          <Alert>
+            <AlertTitle>Published to Instagram</AlertTitle>
+            <AlertDescription className="space-y-1">
+              <p>
+                Media id{" "}
+                <code className="font-mono text-xs">
+                  {publishResult?.mediaId ?? publishedMediaId}
+                </code>
+                .
+              </p>
+              {publishResult?.permalink && (
+                <p>
+                  <a
+                    href={publishResult.permalink}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline-offset-4 hover:underline"
+                  >
+                    View on Instagram ↗
+                  </a>
+                </p>
+              )}
+            </AlertDescription>
+          </Alert>
+        )}
+
         <Separator />
 
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-xs text-muted-foreground">
-            {!editable
-              ? `Read-only — status is "${status}".`
-              : dirty
-                ? "Unsaved changes."
-                : savedAt
-                  ? "Saved."
-                  : "No changes."}
+        <div className="space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-xs text-muted-foreground">
+              {!editable
+                ? `Read-only — status is "${status}".`
+                : dirty
+                  ? "Unsaved changes."
+                  : savedAt
+                    ? "Saved."
+                    : "No changes."}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button
+                    variant="outline"
+                    disabled={
+                      discarding || approving || saving || publishing
+                    }
+                  >
+                    Discard
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Discard this draft?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      The job and its draft will be deleted. This can&apos;t
+                      be undone.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={onDiscard}>
+                      {discarding ? "Discarding…" : "Discard"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+              <Button
+                variant="secondary"
+                onClick={onSave}
+                disabled={!editable || !dirty || saving}
+              >
+                {saving ? "Saving…" : "Save edits"}
+              </Button>
+              <Button
+                variant="secondary"
+                onClick={onApprove}
+                disabled={!editable || dirty || approving}
+              >
+                {approving ? "Approving…" : "Approve"}
+              </Button>
+            </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <AlertDialog>
-              <AlertDialogTrigger asChild>
-                <Button
-                  variant="outline"
-                  disabled={discarding || approving || saving}
+
+          {!alreadyPublished && (
+            <div className="flex flex-wrap items-end justify-between gap-3 rounded-md border bg-muted/30 p-3">
+              <div className="flex-1 min-w-[200px] space-y-1">
+                <label
+                  htmlFor="publish-account"
+                  className="text-xs font-medium text-muted-foreground"
                 >
-                  Discard
-                </Button>
-              </AlertDialogTrigger>
-              <AlertDialogContent>
-                <AlertDialogHeader>
-                  <AlertDialogTitle>Discard this draft?</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    The job and its draft will be deleted. This can&apos;t be
-                    undone.
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                  <AlertDialogAction onClick={onDiscard}>
-                    {discarding ? "Discarding…" : "Discard"}
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-            <Button
-              variant="secondary"
-              onClick={onSave}
-              disabled={!editable || !dirty || saving}
-            >
-              {saving ? "Saving…" : "Save edits"}
-            </Button>
-            <Button
-              onClick={onApprove}
-              disabled={!editable || dirty || approving}
-            >
-              {approving ? "Approving…" : "Approve"}
-            </Button>
-          </div>
+                  Publish to
+                </label>
+                {accounts.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No Instagram accounts connected to this brand. Connect one
+                    on the brand page first.
+                  </p>
+                ) : (
+                  <Select value={accountId} onValueChange={setAccountId}>
+                    <SelectTrigger id="publish-account">
+                      <SelectValue placeholder="Pick an account" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {accounts.map((a) => (
+                        <SelectItem key={a.id} value={String(a.id)}>
+                          @{a.username} ({a.accountType.replace("_", " ")})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              </div>
+              <Button
+                onClick={onPublish}
+                disabled={!canPublish || dirty || publishing}
+              >
+                {publishing ? "Publishing…" : "Publish"}
+              </Button>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

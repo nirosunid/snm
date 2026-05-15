@@ -389,6 +389,18 @@ export interface ContentJob {
    * LLM + image cost for this generation, populated by the reviewer stage in #10.
    */
   costCents?: number | null;
+  /**
+   * Account this job was published to. Set by the publish action; null for unpublished jobs.
+   */
+  account?: (number | null) | Account;
+  /**
+   * Set when status transitions to published.
+   */
+  publishedAt?: string | null;
+  /**
+   * Platform-side media id returned by media_publish. Used as the idempotency key — a job with this set won't be republished.
+   */
+  publishedMediaId?: string | null;
   updatedAt: string;
   createdAt: string;
 }
@@ -676,6 +688,9 @@ export interface ContentJobsSelect<T extends boolean = true> {
   model?: T;
   voiceSamplesUsed?: T;
   costCents?: T;
+  account?: T;
+  publishedAt?: T;
+  publishedMediaId?: T;
   updatedAt?: T;
   createdAt?: T;
 }

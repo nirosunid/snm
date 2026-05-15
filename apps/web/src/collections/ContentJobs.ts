@@ -148,5 +148,32 @@ export const ContentJobs: CollectionConfig = {
           "LLM + image cost for this generation, populated by the reviewer stage in #10.",
       },
     },
+    {
+      name: "account",
+      type: "relationship",
+      relationTo: "accounts",
+      hasMany: false,
+      admin: {
+        position: "sidebar",
+        description:
+          "Account this job was published to. Set by the publish action; null for unpublished jobs.",
+      },
+    },
+    {
+      name: "publishedAt",
+      type: "date",
+      admin: {
+        position: "sidebar",
+        description: "Set when status transitions to published.",
+      },
+    },
+    {
+      name: "publishedMediaId",
+      type: "text",
+      admin: {
+        description:
+          "Platform-side media id returned by media_publish. Used as the idempotency key — a job with this set won't be republished.",
+      },
+    },
   ],
 };
