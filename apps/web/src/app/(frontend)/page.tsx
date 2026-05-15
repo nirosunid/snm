@@ -81,6 +81,26 @@ export default async function Home() {
           </>
         )}
       </nav>
+
+      <footer
+        style={{
+          marginTop: "4rem",
+          paddingTop: "1.25rem",
+          borderTop: "1px solid #E5E5E5",
+          color: "#777",
+          fontSize: "0.85rem",
+        }}
+      >
+        <Link
+          href={routes.privacy()}
+          style={{ color: "#777", marginRight: "1rem" }}
+        >
+          Privacy
+        </Link>
+        <Link href={routes.terms()} style={{ color: "#777" }}>
+          Terms
+        </Link>
+      </footer>
     </main>
   );
 }

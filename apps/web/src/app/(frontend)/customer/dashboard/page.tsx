@@ -13,6 +13,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { DeleteAccountCard } from "@/components/customer/delete-account-card";
 import {
   BillingResultBanner,
   SubscriptionCard,
@@ -108,6 +109,8 @@ export default async function DashboardPage({ searchParams }: Props) {
           </CardContent>
         </Card>
       )}
+
+      {user.email && <DeleteAccountCard email={user.email} />}
     </div>
   );
 }
