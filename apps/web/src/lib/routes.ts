@@ -88,6 +88,7 @@ export const routes = {
   // Dev-only surface (staff-gated)
   dev: {
     templates: (): string => "/dev/templates",
+    feedback: (): string => "/dev/feedback",
   },
 
   // Payload-owned (don't change — referenced for grep + a future rename guard)

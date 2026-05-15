@@ -12,6 +12,7 @@ import {
   AlertDescription,
   AlertTitle,
 } from "@/components/ui/alert";
+import { FeedbackCard } from "@/components/customer/feedback-card";
 import { JobEditor } from "@/components/customer/job-editor";
 import {
   DraftPayloadSchema,
@@ -19,7 +20,7 @@ import {
 } from "@/lib/agents/schemas";
 import { currentUser } from "@/lib/auth/session";
 import { routes } from "@/lib/routes";
-import type { Brand, ContentJob } from "@/payload-types";
+import type { Brand, ContentJob, Feedback } from "@/payload-types";
 
 type Props = { params: Promise<{ brandId: string; jobId: string }> };
 
@@ -94,6 +95,16 @@ export default async function JobDetailPage({ params }: Props) {
   const draft = draftParse.success ? draftParse.data : null;
   const review = reviewParse.success ? reviewParse.data : null;
 
+  const { docs: existingFeedback } = await payload.find({
+    collection: "feedback",
+    user,
+    overrideAccess: false,
+    where: { job: { equals: job.id } },
+    limit: 1,
+    depth: 0,
+  });
+  const myFeedback = (existingFeedback[0] as Feedback | undefined) ?? null;
+
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       <div>
@@ -146,15 +157,22 @@ export default async function JobDetailPage({ params }: Props) {
           </AlertDescription>
         </Alert>
       ) : (
-        <JobEditor
-          jobId={job.id}
-          brandId={brand.id}
-          status={job.status}
-          initialDraft={draft}
-          review={review}
-          accounts={accountOptions}
-          publishedMediaId={job.publishedMediaId ?? null}
-        />
+        <>
+          <JobEditor
+            jobId={job.id}
+            brandId={brand.id}
+            status={job.status}
+            initialDraft={draft}
+            review={review}
+            accounts={accountOptions}
+            publishedMediaId={job.publishedMediaId ?? null}
+          />
+          <FeedbackCard
+            jobId={job.id}
+            initialRating={myFeedback?.rating ?? null}
+            initialNotes={myFeedback?.notes ?? null}
+          />
+        </>
       )}
     </div>
   );

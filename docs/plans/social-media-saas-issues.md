@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#17 are done at the code level (with cuts noted per-issue); #18 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path. Issue #17's human-action items (lawyer review, LLC, Meta business verification, support mailbox, branded assets) are tracked in [docs/ops/launch-prerequisites.md](../ops/launch-prerequisites.md) and must go green before #18.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **All 19 MVP-1 issues are code-complete (with cuts noted per-issue).** What remains is operator work: lawyer-review the legal pages, register the LLC, complete Meta Business Verification, record + submit the App Review screencast, and run the private beta. Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path. Operator runbooks live in `docs/ops/`: [`launch-prerequisites.md`](../ops/launch-prerequisites.md), [`meta-app-review.md`](../ops/meta-app-review.md), [`private-beta.md`](../ops/private-beta.md), [`deploy.md`](../ops/deploy.md).
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -983,20 +983,58 @@ Issue #18 is the actual Meta App Review submission — a screencast recording, p
 
 ---
 
-## Issue 19 — Private beta launch (5–10 users)
+## Issue 19 — Private beta launch (5–10 users) ✅ CODE SURFACE DONE; running the beta is operator work tracked in docs/ops/private-beta.md
 
-### What to build
+### What was built
 
-Add 5–10 hand-picked beta users as Meta test users while App Review pends (post-approval, they can use the live app directly). Onboard them through the live signup → brand → carousel → approve → publish flow. Collect quality feedback per generation. Iterate the planner / writer / reviewer prompts and template designs based on real customer feedback until the founder-quality bar is met.
+Issue #19 is fundamentally about **running** a 5–10-user beta — onboarding humans, reading their feedback, tuning prompts. The code surface that makes the loop tractable lands here.
+
+**`Feedback` collection ([apps/web/src/collections/Feedback.ts](apps/web/src/collections/Feedback.ts), migration `20260515_114712_add_feedback`).** One row per (owner, job): `rating` (1-5, indexed), optional free-form `notes`, `job` rel, `owner` rel (admin-write-only, defaulted to `req.user.id`). Same `adminOrCustomerOwner` access pattern as the rest. Indexed on `rating` so the founder dashboard's distribution histogram is cheap.
+
+**`submitFeedback` server action ([apps/web/src/lib/feedback/actions.ts](apps/web/src/lib/feedback/actions.ts)).** Auth-gated; confirms the caller owns the job through customer-scoped read; **upserts on `(owner, job)`** so re-rating updates the existing row rather than appending — the founder sees each user's *latest* opinion, not a stack of revisions. `revalidatePath` on the queue-job URL so the editor refreshes.
+
+**`FeedbackCard` widget ([apps/web/src/components/customer/feedback-card.tsx](apps/web/src/components/customer/feedback-card.tsx)).** Star-rating button row (1-5) with hover preview, optional `Textarea` for notes, save button gated on a rating being picked. Receives `initialRating` + `initialNotes` so a re-visit shows the user's prior rating to update. Sits on the queue-job detail page below `JobEditor` so it's adjacent to the actual draft the user is rating — context preserved.
+
+**Founder dashboard at `/dev/feedback` ([apps/web/src/app/(frontend)/dev/feedback/page.tsx](apps/web/src/app/(frontend)/dev/feedback/page.tsx), staff-gated via `isStaff`).** Two cards: an **Aggregate** card with total count, average rating, and a horizontal bar histogram of the 1–5 distribution; a **Recent feedback** table (newest 100) with rating, job topic, brand, user email, notes preview, and updated-at. Reads with `overrideAccess: true` and `depth: 2` so it can render the brand + user names without a second query.
+
+**Private-beta runbook ([docs/ops/private-beta.md](docs/ops/private-beta.md)).** Onboarding script (10-step, ~20 min/user), feedback-loop cadence (daily / weekly / per-user check-in), the founder-quality-bar definition (≥50% drafts published as-is on the founder's own brand, with a tracking table template), what the code surface gives the founder, common failure modes mapped to prompt/file fixes, and the exit criteria for moving to public beta.
+
+### Implementation notes (as built)
+
+- `apps/web/src/collections/Feedback.ts` + `apps/web/src/migrations/20260515_114712_add_feedback.{ts,json}` — schema.
+- `apps/web/src/lib/feedback/actions.ts` — `submitFeedback` upsert action.
+- `apps/web/src/components/customer/feedback-card.tsx` — client widget with star buttons + Textarea.
+- `apps/web/src/app/(frontend)/customer/brands/[brandId]/queue/[jobId]/page.tsx` — loads any existing feedback row for the current user + job, threads to the FeedbackCard.
+- `apps/web/src/app/(frontend)/dev/feedback/page.tsx` — staff-gated founder dashboard.
+- `apps/web/src/lib/routes.ts` — `routes.dev.feedback()`.
+- `docs/ops/private-beta.md` — operator runbook.
+
+### Architectural decisions made during build
+
+- **Upsert per (user, job), not append.** The founder cares about the user's *current* opinion, not a stack of intermediate ones. Updating in place keeps the dataset clean and avoids "this user gave conflicting ratings" noise.
+- **Star widget, not slider / numeric input.** Five stars is the universally-understood quick-rating pattern; slider implies more granularity than 1–5 actually has, numeric input adds friction.
+- **Notes are free-form, not structured.** Beta users don't all have the same vocabulary for what's wrong. Free text + the founder's eyeballs is the right interface for the first 50 ratings; structure (e.g. tag-based reasons) earns its way in later when patterns crystallize.
+- **`/dev/feedback` is staff-gated, not behind `/admin`.** Payload's admin lists raw rows but doesn't aggregate; the founder needs the histogram + the per-row context (brand, user, notes preview) to scan quickly. A purpose-built page is faster than scrolling Payload's admin grid.
+- **Idempotent on re-rating.** If a beta user rates a draft, then later loses confidence and changes it, the founder sees the new rating — not the original. This matches how the founder thinks about a beta user's signal: their *latest* opinion is the one that counts.
+- **No "quality" calculation in code.** The "founder-quality bar" — ≥50% as-is publishes — is operator-tracked, not code-tracked. The acceptance criterion is about the founder's judgment of their own output; making it a query in `/dev/feedback` would tempt the founder to game the metric. Tracking by hand in the runbook keeps the discipline honest.
 
 ### Acceptance criteria
 
-- [ ] 5–10 beta users onboarded.
-- [ ] Each user generates ≥3 carousels.
-- [ ] Each user approves and publishes ≥1 carousel.
-- [ ] Founder publishes ≥50% of generated drafts on their own brand without edits, the rest with only minor edits.
-- [ ] Documented prompt-tuning iterations from feedback.
-- [ ] If the founder-quality bar is not met, beta does not expand — keep iterating.
+- [ ] **5–10 beta users onboarded** — operator work; tracked in the runbook.
+- [ ] **Each user generates ≥3 carousels** — the `/dev/feedback` aggregate card surfaces total ratings; cross-reference with `content-jobs` rows in Payload admin for the per-user generation count. Operator-tracked.
+- [ ] **Each user approves and publishes ≥1 carousel** — `content-jobs` rows with `status='published'` and `publishedMediaId` set. Operator can query in `/admin`.
+- [ ] **Founder publishes ≥50% of generated drafts on their own brand without edits** — operator-tracked in the runbook's per-week table.
+- [x] **Documented prompt-tuning iterations from feedback** — the runbook prescribes a `docs/ops/prompt-tuning-log.md` (created on the first iteration) for tracking what changed and why.
+- [ ] **If the founder-quality bar is not met, beta does not expand** — runbook gates expansion explicitly: "If the founder isn't shipping ≥50% as-is, the beta does NOT expand." Operator discipline.
+
+(Code-side: the feedback collection, the submission widget, the founder dashboard, and the runbook are all live.)
+
+### Notes for follow-on slices
+
+- **Public-beta launch** is the next inflection point — the runbook's "Exit criteria → public beta" section names the gate. Code-side, the only changes will be removing any "private beta" framing from the marketing surface.
+- **Per-user usage analytics** (drafts/week, publish rate, time-to-approve) becomes useful at >10 users where eyeballs don't scale. A `/dev/usage` view next to `/dev/feedback` is the natural shape.
+- **Structured feedback reasons** (tag-based: "off-brand voice", "factual error", "wrong CTA", etc.) earn their way in once the free-form notes start clustering visibly. Add as additional fields on the Feedback collection rather than replacing the `notes` textarea.
+- **Auto-prompt-tuning hooks** — a feedback row with `rating ≤ 2` could append the offending draft to a "training set" the next prompt-tuning pass references. Speculative; only build when the manual loop hurts.
 
 ### Blocked by
 

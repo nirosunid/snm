@@ -8,6 +8,7 @@ import { Accounts } from "./collections/Accounts";
 import { Assets } from "./collections/Assets";
 import { Brands } from "./collections/Brands";
 import { ContentJobs } from "./collections/ContentJobs";
+import { Feedback } from "./collections/Feedback";
 import { Media } from "./collections/Media";
 import { Subscriptions } from "./collections/Subscriptions";
 import { Templates } from "./collections/Templates";
@@ -36,6 +37,7 @@ export default buildConfig({
     ContentJobs,
     Accounts,
     Subscriptions,
+    Feedback,
   ],
   onInit: async (payload) => {
     await seedTemplates(payload);

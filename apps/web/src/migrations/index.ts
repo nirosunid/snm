@@ -8,6 +8,7 @@ import * as migration_20260511_083852_add_review_to_content_jobs from './2026051
 import * as migration_20260512_134747_add_accounts from './20260512_134747_add_accounts';
 import * as migration_20260515_065343_add_publish_to_content_jobs from './20260515_065343_add_publish_to_content_jobs';
 import * as migration_20260515_081351_add_subscriptions from './20260515_081351_add_subscriptions';
+import * as migration_20260515_114712_add_feedback from './20260515_114712_add_feedback';
 
 export const migrations = [
   {
@@ -58,6 +59,11 @@ export const migrations = [
   {
     up: migration_20260515_081351_add_subscriptions.up,
     down: migration_20260515_081351_add_subscriptions.down,
-    name: '20260515_081351_add_subscriptions'
+    name: '20260515_081351_add_subscriptions',
+  },
+  {
+    up: migration_20260515_114712_add_feedback.up,
+    down: migration_20260515_114712_add_feedback.down,
+    name: '20260515_114712_add_feedback'
   },
 ];

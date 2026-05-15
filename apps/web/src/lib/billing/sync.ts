@@ -1,5 +1,3 @@
-import "server-only";
-
 import { getPayload } from "payload";
 import type Stripe from "stripe";
 

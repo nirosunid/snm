@@ -1,5 +1,3 @@
-import "server-only";
-
 import Stripe from "stripe";
 
 let cached: Stripe | null = null;

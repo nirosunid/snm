@@ -76,6 +76,7 @@ export interface Config {
     'content-jobs': ContentJob;
     accounts: Account;
     subscriptions: Subscription;
+    feedback: Feedback;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -92,6 +93,7 @@ export interface Config {
     'content-jobs': ContentJobsSelect<false> | ContentJobsSelect<true>;
     accounts: AccountsSelect<false> | AccountsSelect<true>;
     subscriptions: SubscriptionsSelect<false> | SubscriptionsSelect<true>;
+    feedback: FeedbackSelect<false> | FeedbackSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -475,6 +477,30 @@ export interface Subscription {
   createdAt: string;
 }
 /**
+ * Per-content-job quality feedback. Drives prompt-tuning iterations during the private beta.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "feedback".
+ */
+export interface Feedback {
+  id: number;
+  job: number | ContentJob;
+  /**
+   * Stamped automatically from the authenticated user.
+   */
+  owner: number | User;
+  /**
+   * 1-5 stars. 1 = unusable, 5 = ship-as-is.
+   */
+  rating: number;
+  /**
+   * Optional free-form feedback the founder reads when synthesizing prompt-tuning iterations.
+   */
+  notes?: string | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -533,6 +559,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'subscriptions';
         value: number | Subscription;
+      } | null)
+    | ({
+        relationTo: 'feedback';
+        value: number | Feedback;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -756,6 +786,18 @@ export interface SubscriptionsSelect<T extends boolean = true> {
   status?: T;
   currentPeriodEnd?: T;
   cancelAtPeriodEnd?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "feedback_select".
+ */
+export interface FeedbackSelect<T extends boolean = true> {
+  job?: T;
+  owner?: T;
+  rating?: T;
+  notes?: T;
   updatedAt?: T;
   createdAt?: T;
 }

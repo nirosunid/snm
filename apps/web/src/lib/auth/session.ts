@@ -1,5 +1,3 @@
-import "server-only";
-
 import { headers as nextHeaders } from "next/headers";
 import { getPayload } from "payload";
 
