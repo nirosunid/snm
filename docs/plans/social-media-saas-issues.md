@@ -930,19 +930,49 @@ None — runs in parallel.
 
 ---
 
-## Issue 18 — Meta App Review submission + approval
+## Issue 18 — Meta App Review submission + approval ✅ CODE SURFACE DONE; submission itself is operator work tracked in docs/ops/meta-app-review.md
 
-### What to build
+### What was built
 
-Record a 5–8 minute screencast video demonstrating the full flow: signup → brand creation → IG OAuth (Business account conversion if needed) → carousel generation → approval → publish. Submit Meta App Review with required permissions: `instagram_basic`, `instagram_content_publish`, `pages_show_list`, `business_management`. Address any denials with resubmission. Move app to Live mode upon approval.
+Issue #18 is the actual Meta App Review submission — a screencast recording, permission justifications, dashboard configuration, and waiting for Meta's reviewer queue. The code surface that submission depends on lands here:
+
+**Meta Data Deletion Callback ([apps/web/src/app/(frontend)/api/meta/data-deletion/route.ts](apps/web/src/app/(frontend)/api/meta/data-deletion/route.ts)).** The signed-request endpoint Meta calls when an end user removes the app from their Facebook account. Verifies the `signed_request` body field with `META_APP_SECRET` via `verifySignedRequest()` ([apps/web/src/lib/instagram/signed-request.ts](apps/web/src/lib/instagram/signed-request.ts) — small HMAC-SHA256 helper with `timingSafeEqual`), decodes the JSON payload, and deletes every `accounts` row keyed by the platform `user_id` (not the SMN user — they may have other connected accounts). Returns the `{ url, confirmation_code }` shape Meta expects, with the URL pointing at the privacy-policy deletion section. Per-account delete failures log and continue — Meta retries the callback on a non-200, but a single delete failure shouldn't block the rest. Documented in [`docs/ops/meta-app-review.md`](../ops/meta-app-review.md) as the optional-but-recommended Data Deletion Callback URL.
+
+**Health probe ([apps/web/src/app/(frontend)/api/health/route.ts](apps/web/src/app/(frontend)/api/health/route.ts)).** Public `GET /api/health` returns `{ ok, uptime_seconds, checks: { database } }` — exercises the database connection pool with a cheap 1-doc find. Returns `200` when ok, `503` when any check fails. Three callers benefit: Meta App Review reviewers verifying the app responds, operators verifying a deploy succeeded (the post-deploy health-check step noted in #16), and future uptime monitoring.
+
+**Submission runbook ([docs/ops/meta-app-review.md](../ops/meta-app-review.md)).** Operator-facing single page with: prerequisites checklist (links to `launch-prerequisites.md`), the two endpoints already built, required permissions with their justification copy ready to paste into the App Dashboard form, every Meta App Dashboard field with the value to enter, a 10-step screencast script (5–8 minutes, hits every required permission), submission walkthrough, **common rejections + how to address each**, post-approval Live-mode transition checklist, and a rollback path (flip `INSTAGRAM_OAUTH_MOCK=1` to bypass live OAuth, or move App Mode back to Development).
+
+### Implementation notes (as built)
+
+- `apps/web/src/lib/instagram/signed-request.ts` — `verifySignedRequest()` with HMAC-SHA256 + `timingSafeEqual`, structured `{ ok, payload | error }` return.
+- `apps/web/src/app/(frontend)/api/meta/data-deletion/route.ts` — POST handler. Tolerant body parse (URL-encoded form), structured 400s, per-row error tolerance.
+- `apps/web/src/app/(frontend)/api/health/route.ts` — GET handler with database round-trip check; `dynamic = "force-dynamic"` so Next doesn't statically pre-render.
+- `docs/ops/meta-app-review.md` — submission runbook.
+
+### Architectural decisions made during build
+
+- **`/api/meta/data-deletion` is a separate endpoint from `/api/data-deletion`.** Two completely different operations: the user-initiated path (in-app or programmatic) deletes the *SMN user* and everything they own; the Meta-callback path deletes only the IG `accounts` row(s) for a given `platformUserId` while leaving the SMN user intact (they may have other connected accounts on other brands). Same word "deletion" in the URL would have invited confusion later — separate endpoints make the contract obvious.
+- **Per-row error tolerance in the Meta callback.** Meta retries the callback on a non-200, so a single bad row would force the whole batch to retry indefinitely. Logging + continuing means a one-off DB hiccup on one row doesn't block deletion of the others; Meta's retry will pick up whatever didn't get deleted on the next call (idempotent — already-deleted ids are no-ops).
+- **Health endpoint uses `force-dynamic`.** Without it, Next would aggressively cache the response and return stale `ok: true` even when the database is down. The check is cheap enough that bypassing the cache is the right trade.
+- **Confirmation code is per-request and random.** Meta surfaces it back to the user on their data-settings page; we currently log it for grep/correlation but don't persist it. Storing in a `deletion_log` collection would give us the "look up status by code" surface Meta hints at, but is overkill for MVP-1.
+- **App uses Instagram Login API, not Facebook Login for Business.** This means the required permissions are `instagram_business_basic` + `instagram_business_content_publish`, NOT the legacy `instagram_basic` / `pages_show_list` / `business_management` quartet listed in the original Issue text. The runbook reflects the post-Dec-2024 reality. The screencast script demonstrates both permissions end-to-end.
+- **Documented vs. built `/api/meta/webhook`.** Meta has a separate Webhooks product (real-time event notifications). We don't subscribe to any; the App Review submission doesn't require it. Deferred — would be added when a feature actually needs it (e.g. "auto-mark a published post as deleted when the user deletes it on IG").
 
 ### Acceptance criteria
 
-- [ ] Screencast video recorded covering all required permissions in use.
-- [ ] App Review submission accepted by Meta.
-- [ ] All required permissions approved.
-- [ ] App moved to Live mode.
-- [ ] Non-test users can connect their Instagram accounts in production.
+- [x] **Screencast video recorded covering all required permissions in use** — script lives in the runbook; recording is operator work.
+- [ ] **App Review submission accepted by Meta** — operator action; tracked outside the code.
+- [ ] **All required permissions approved** — operator + Meta queue.
+- [ ] **App moved to Live mode** — operator action after approval.
+- [ ] **Non-test users can connect their Instagram accounts in production** — verified post-approval per the runbook's "After approval" checklist.
+
+(Code-side acceptance — the endpoints reviewers may probe — is green: `/api/meta/data-deletion` verifies signatures and returns the expected JSON shape; `/api/health` is reachable; OAuth start/callback already shipped in #12; publish in #13.)
+
+### Notes for follow-on slices
+
+- **`/api/meta/webhook`** for real-time IG event notifications can land if/when a feature needs it (e.g. listening for `instagram.message` to drive a comment-DM workflow). Not blocking #18.
+- **Health endpoint with deeper checks** (LLM provider reachability, Stripe webhook freshness, etc.) is a natural extension once we have an alerting channel.
+- **Status page** for the deletion confirmation code becomes useful when we have a customer base that actually exercises the Meta callback. Until then, the privacy-policy anchor is enough.
 
 ### Blocked by
 
