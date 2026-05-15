@@ -5,6 +5,8 @@ import {
   adminOrCustomerOwner,
   isLoggedIn,
 } from "@/access";
+import { checkPaywall } from "@/lib/billing/paywall";
+import type { User } from "@/payload-types";
 
 export const CONTENT_JOB_STATUSES = [
   "queued",
@@ -39,6 +41,18 @@ export const ContentJobs: CollectionConfig = {
         if (!brandId) return data;
         const role = (req.user as { role?: string }).role;
         if (role === "admin" || role === "system") return data;
+
+        // Paywall: customers without an active Pro subscription can't
+        // create content jobs. Bypassed when STRIPE_BYPASS=1 (dev / CI).
+        const paywall = await checkPaywall(req.user as User);
+        if (!paywall.ok) {
+          throw new Error(
+            paywall.reason === "no_subscription"
+              ? "An active Pro subscription is required to create content jobs."
+              : `Your subscription is ${paywall.status}; renew or update payment to keep generating.`,
+          );
+        }
+
         const owned = await req.payload.find({
           collection: "brands",
           where: { id: { equals: brandId }, owner: { equals: req.user.id } },
