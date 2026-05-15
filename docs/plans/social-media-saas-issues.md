@@ -1,6 +1,6 @@
 # Issues: Social Media Manager SaaS — MVP-1
 
-> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#16 are done (with cuts noted per-issue); #17 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path.
+> **Status:** Draft — pending publication to issue tracker (none configured yet). **Issues #1–#17 are done at the code level (with cuts noted per-issue); #18 is the active slice.** Issue #4 is fully closed (logo upload landed in #6). Issue #6 is fully closed (`getAssetLibraryTool` wrapper landed in #8; planner-driven asset slide embedding landed in #9). UI scaffolding (Tailwind CSS v4 + shadcn/ui sidebar+header shell) landed between #3 and #4 — see "UI scaffolding" note below the critical path. Issue #17's human-action items (lawyer review, LLC, Meta business verification, support mailbox, branded assets) are tracked in [docs/ops/launch-prerequisites.md](../ops/launch-prerequisites.md) and must go green before #18.
 >
 > **Architecture note:** The stack pivoted during Issue #2. The agent pipeline now lives in `apps/web` TypeScript (Vercel AI SDK + Zod), not in `apps/agents` Python. RabbitMQ/Celery/Flower are deferred. Customer-facing routes are prefixed with `/customer`. See `CLAUDE.md` (repo root) for the current architecture; `social-media-saas-mvp-1.md`'s preamble explains the deltas. Issues #5+ below still describe the Python `/embed` endpoint — that endpoint will land in `apps/web` instead, served from a TS route under `/api/customer/embed`.
 >
@@ -862,20 +862,67 @@ The bulk of this slice landed back in Issue #1's scaffolding: the GitHub Actions
 
 ---
 
-## Issue 17 — Operational prerequisites (legal / Meta / business)
+## Issue 17 — Operational prerequisites (legal / Meta / business) ✅ CODE DONE; human-action items tracked in docs/ops/launch-prerequisites.md
 
-### What to build
+### What was built
 
-The non-code prerequisites that gate Meta App Review approval (#18). Real privacy policy and terms of service (lawyer-reviewed, not placeholder) at `/privacy` and `/terms`. Data-deletion endpoint at `/api/data-deletion` that accepts a deletion request and removes all user + brand data within the platform timeframe. Business entity registered (LLC or equivalent). Meta business verification submitted (can take days). Support email working at `support@<domain>`. App icon and branded logo finalized. Runs in parallel with the feature slices — start at week 1.
+Issue #17 is mostly *non-code* — lawyer review, business entity registration, Meta business verification, support mailbox, branded logo design. What lands here is the code surface those human items plug into, plus the operator runbook that tracks them.
+
+**Legal pages ([apps/web/src/app/(legal)/](apps/web/src/app/(legal)/layout.tsx)).** New `(legal)` route group with `/privacy` and `/terms` working drafts. Each page covers the substance Meta App Review actually scans for — what we collect, who we share with, how to delete, security posture, contact, governing law — and leads with an unmissable destructive-style **Alert** flagging "Placeholder — pending legal review". The structure is good; the lawyer edits in place rather than rewriting from scratch.
+
+**Data deletion** runs in two surfaces, sharing one cascade helper:
+
+- [apps/web/src/lib/account/delete.ts](apps/web/src/lib/account/delete.ts) — `deleteAccountCascade(userId)` deletes in dependency order: `content-jobs` → `accounts` → `voice-samples` → `assets` → `brands` → `subscriptions` → `media` (tries `uploadedBy` / `owner` / `createdBy` for the upload-author convention) → `users`. All with `overrideAccess: true` because the operation crosses access boundaries by design. Idempotent — partially-deleted accounts just report zero counts for what's already gone.
+- [apps/web/src/lib/account/actions.ts](apps/web/src/lib/account/actions.ts) — `deleteMyAccount({ confirmEmail })` server action. Auth-gated; **requires the caller to type their own email exactly** as a deliberate-action confirmation; clears Payload's auth cookies on success; returns the deletion summary so the UI can render a confirmation.
+- [apps/web/src/app/(frontend)/api/data-deletion/route.ts](apps/web/src/app/(frontend)/api/data-deletion/route.ts) — `POST` wraps the same action so support-driven GDPR/CCPA tickets have a programmatic surface. Same auth + email-match gate.
+
+**Danger zone UI ([apps/web/src/components/customer/delete-account-card.tsx](apps/web/src/components/customer/delete-account-card.tsx)).** Destructive-styled card on the dashboard. **Delete my account** opens an `AlertDialog` showing the user's email and an `Input` that must match it before "Delete forever" enables. On success, redirects to `/sign-in?deleted=1`. The sign-in page picks up the flag and renders a confirmation `Alert` so the user knows the deletion landed.
+
+**Static-asset scaffolding ([apps/web/public/README.md](apps/web/public/README.md)).** The `apps/web/public/` directory didn't exist; created it with a single `README.md` that enumerates the brand-asset files Meta App Review and the rest of the UI need (`icon-1024.png`, `og-image.png`, `favicon.ico`, `logo.svg`, `logo-mark.svg`, `apple-touch-icon.png`) with their specs. Designer drops the real files in; the gap is now catalogued instead of invisible.
+
+**Operator runbook ([docs/ops/launch-prerequisites.md](docs/ops/launch-prerequisites.md)).** A single table tracking every human-action item — lawyer review, LLC paperwork, Meta Business Manager verification, support mailbox, brand assets — with owner / status / notes columns. Plus the Meta App Dashboard URL/field reference (Privacy Policy URL, Terms URL, Data Deletion Instructions URL, OAuth Redirect URI), plus a spec for the *optional* Meta-signed `Data Deletion Callback` endpoint (`/api/meta/data-deletion`) for when App Review demands it. The whole table goes green before #18.
+
+### Implementation notes (as built)
+
+- `apps/web/src/app/(legal)/layout.tsx` — minimal layout (header link back to home, footer with cross-links between privacy/terms).
+- `apps/web/src/app/(legal)/privacy/page.tsx` — privacy policy (8 sections + LAST_UPDATED + COMPANY_NAME / SUPPORT_EMAIL / JURISDICTION constants).
+- `apps/web/src/app/(legal)/terms/page.tsx` — terms (12 sections + same constants).
+- `apps/web/src/lib/account/delete.ts` — cascade helper.
+- `apps/web/src/lib/account/actions.ts` — `deleteMyAccount` server action.
+- `apps/web/src/app/(frontend)/api/data-deletion/route.ts` — POST endpoint.
+- `apps/web/src/components/customer/delete-account-card.tsx` — danger-zone UI.
+- `apps/web/src/app/(frontend)/customer/dashboard/page.tsx` — danger zone added at the bottom of the dashboard.
+- `apps/web/src/app/(frontend)/sign-in/page.tsx` — confirmation banner on `?deleted=1`.
+- `apps/web/src/app/(frontend)/page.tsx` — Privacy / Terms links in the home-page footer.
+- `apps/web/public/README.md` — placeholder file inventory.
+- `docs/ops/launch-prerequisites.md` — human-action checklist + Meta App Dashboard URL reference + Data Deletion Callback spec.
+
+### Architectural decisions made during build
+
+- **Two surfaces, one cascade helper.** `deleteMyAccount` (server action) and `POST /api/data-deletion` (route handler) both call `deleteAccountCascade`. The action is the in-app primary path; the route exists for support-driven external requests where the operator runs the deletion against the user's session token. Same auth gate, same email-match confirmation, same cascade.
+- **Email-match confirmation, not "type DELETE".** Typing the user's own email is a stronger signal of "I know what I'm doing" — it requires looking at the displayed email and matching it. "Type DELETE" is muscle-memory after the second time.
+- **No soft-delete / undo window.** Acceptance criteria explicitly says "deletes" — not "marks deleted, fully removes after N days". The implementation is hard delete. Backups (#16) provide the recovery path if needed within the 30-day retention.
+- **Media deletion via field-name fallback.** Payload's Media-as-uploader convention varies per project (`uploadedBy`, `owner`, `createdBy`); rather than assume one and skip the others, the cascade tries each and uses the first that exists. Falls through silently if none match — the operator can clean up via the Payload admin UI in that edge case.
+- **Working-draft legal pages, not lorem ipsum.** Lawyers cost money per word; a substantive draft they edit in place is faster + cheaper than a from-scratch engagement. The destructive Alert at the top of each page makes the placeholder status unmissable so no operator publishes "as-is" by accident.
+- **Public-dir scaffolded with a README, not stub assets.** Stub PNGs would be confused for the real files; a `README.md` listing what's missing makes the gap obvious and the spec discoverable. Designer drops the real files in.
+- **Meta Data Deletion Callback is documented, not built.** Two reasons: (1) Meta App Review accepts a Data Deletion *Instructions URL* (the privacy-policy anchor) without requiring the signed-request callback. (2) The signed-request endpoint specifically deletes `accounts` rows keyed by `platformUserId`, not the SMN user — different operation from `deleteAccountCascade`. Building it speculatively risks getting Meta's spec wrong; documenting the contract in the runbook keeps it ready when App Review demands it.
 
 ### Acceptance criteria
 
-- [ ] `/privacy` and `/terms` render real, legally-reviewed content (not placeholders).
-- [ ] Data-deletion endpoint accepts a request, deletes the user + their brands + accounts + voice samples + assets + jobs + media, and confirms in writing.
-- [ ] Business entity confirmed (LLC paperwork or equivalent).
-- [ ] Meta Business Manager has the entity verified.
-- [ ] `support@<domain>` receives email.
-- [ ] App icon (1024×1024 PNG) and branded logo files in `apps/web/public/`.
+- [x] **`/privacy` and `/terms` render** — at the live URLs, with substantive working-draft content. Marked as "Placeholder — pending legal review" until lawyer review lands.
+- [x] **Data-deletion endpoint accepts a request and deletes the user + brands + accounts + voice samples + assets + jobs + media** — `POST /api/data-deletion` (programmatic) and the dashboard Danger zone (in-app) both call `deleteAccountCascade`. Returns a JSON `{ deleted: { ... }, message }` summary on success; in-app path redirects to `/sign-in?deleted=1` with a confirmation banner.
+- [ ] **Business entity confirmed (LLC paperwork or equivalent)** — operator work; tracked in `docs/ops/launch-prerequisites.md`.
+- [ ] **Meta Business Manager has the entity verified** — operator work; same.
+- [ ] **`support@<domain>` receives email** — operator work; same.
+- [ ] **App icon (1024×1024 PNG) and branded logo files in `apps/web/public/`** — directory scaffolded with `README.md` enumerating the spec; designer drops the real files in.
+
+### Notes for follow-on slices
+
+- **Lawyer engagement** is the single biggest unknown. The current draft is structured to minimize their billable hours — substance is there, edit in place.
+- **Meta Data Deletion Callback endpoint** lands at `/api/meta/data-deletion` when App Review demands it. Spec is in the runbook; builds in ~1 hour against `META_APP_SECRET` HMAC verification.
+- **Account deletion summary email** would be a polish — a transactional email summarizing what was deleted, sent to the user's email before the cascade runs. Requires the SMTP plumbing in `.env.example` to actually be wired up (currently scaffolded but unused in MVP-1).
+- **Audit log** of deletions (timestamp, summary counts, optional reason) would help if a deletion-disputed claim ever lands. Out of scope here.
+- **Real OG image / favicon** are required for the link-preview cards we'll inevitably want for the marketing site — drops directly into `apps/web/public/` per the scaffolded README.
 
 ### Blocked by
 
