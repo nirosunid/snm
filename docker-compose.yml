@@ -29,6 +29,14 @@ services:
       META_APP_ID: ${META_APP_ID:-}
       META_APP_SECRET: ${META_APP_SECRET:-}
       INSTAGRAM_REDIRECT_URI: ${INSTAGRAM_REDIRECT_URI:-http://localhost:3000/api/oauth/instagram/callback}
+      # Mock the Instagram OAuth round-trip when there are no Meta App creds
+      # (dev / CI). MUST be unset or 0 in production — set the App* vars instead.
+      INSTAGRAM_OAUTH_MOCK: ${INSTAGRAM_OAUTH_MOCK:-}
+      INSTAGRAM_OAUTH_MOCK_ACCOUNT_TYPE: ${INSTAGRAM_OAUTH_MOCK_ACCOUNT_TYPE:-}
+      INSTAGRAM_OAUTH_MOCK_USERNAME: ${INSTAGRAM_OAUTH_MOCK_USERNAME:-}
+      INSTAGRAM_OAUTH_MOCK_USER_ID: ${INSTAGRAM_OAUTH_MOCK_USER_ID:-}
+      # Bypass the Stripe paywall (dev / CI). MUST be unset or 0 in production.
+      STRIPE_BYPASS: ${STRIPE_BYPASS:-}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ${NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY:-}
       STRIPE_WEBHOOKS_SIGNING_SECRET: ${STRIPE_WEBHOOKS_SIGNING_SECRET:-}

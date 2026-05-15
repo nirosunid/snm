@@ -2,3 +2,31 @@ services:
   postgres:
     ports:
       - "127.0.0.1:5433:5432"
+
+  # Nightly pg_dump sidecar — runs every BACKUP_INTERVAL_SECONDS (default 24h)
+  # and prunes files older than BACKUP_KEEP_DAYS (default 30). Writes to the
+  # same ./backups/postgres directory the on-deploy backup uses, so backups
+  # from both paths interleave naturally.
+  backup-cron:
+    image: pgvector/pgvector:pg16
+    container_name: smn-backup-cron
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      BACKUP_KEEP_DAYS: "30"
+    # Volume paths in included compose files resolve relative to the included
+    # file's own directory (i.e. ./database here), so escape with `../` to
+    # land at the project root.
+    volumes:
+      - ../backups/postgres:/backups
+      - ./scripts/backup-cron.sh:/usr/local/bin/backup-cron.sh:ro
+    networks:
+      - smn-network
+    entrypoint: ["/usr/local/bin/backup-cron.sh"]
