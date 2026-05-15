@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
+import { startCheckout } from "@/lib/billing/actions";
 import type { GenerateResponse, PromoKind } from "@/lib/agents/schemas";
 import { routes } from "@/lib/routes";
 
@@ -47,6 +48,7 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<GenerateResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [paywallHit, setPaywallHit] = useState(false);
   const [slideIdx, setSlideIdx] = useState(0);
   const [promoMode, setPromoMode] = useState<PromoMode>(PROMO_OFF);
   const [productInfo, setProductInfo] = useState("");
@@ -89,6 +91,7 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
   async function onGenerate() {
     setLoading(true);
     setError(null);
+    setPaywallHit(false);
     setResult(null);
     setSlideIdx(0);
     try {
@@ -116,6 +119,7 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
           typeof (json as { error?: string }).error === "string"
             ? (json as { error: string }).error
             : `HTTP ${res.status}`;
+        if (res.status === 402) setPaywallHit(true);
         setError(msg);
         return;
       }
@@ -237,9 +241,18 @@ export function GeneratePlayground({ brands }: { brands: BrandOption[] }) {
 
       {error && (
         <Alert variant="destructive">
-          <AlertTitle>Generation failed</AlertTitle>
-          <AlertDescription className="break-words whitespace-pre-wrap">
-            {error}
+          <AlertTitle>
+            {paywallHit ? "Subscription required" : "Generation failed"}
+          </AlertTitle>
+          <AlertDescription className="space-y-3 break-words whitespace-pre-wrap">
+            <p>{error}</p>
+            {paywallHit && (
+              <form action={startCheckout}>
+                <Button type="submit" size="sm" variant="secondary">
+                  Subscribe to Pro
+                </Button>
+              </form>
+            )}
           </AlertDescription>
         </Alert>
       )}

@@ -13,10 +13,19 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import {
+  BillingResultBanner,
+  SubscriptionCard,
+} from "@/components/customer/subscription-card";
 import { currentUser, isStaff } from "@/lib/auth/session";
 import { routes } from "@/lib/routes";
 
-export default async function DashboardPage() {
+type Props = {
+  searchParams: Promise<{ billing?: string }>;
+};
+
+export default async function DashboardPage({ searchParams }: Props) {
+  const { billing } = await searchParams;
   // Layout already enforces auth, so user is guaranteed non-null here — but
   // call again for the typed shape (and so this page works if the layout
   // contract ever changes).
@@ -43,6 +52,10 @@ export default async function DashboardPage() {
             : "You're all set up. Here's what's next."}
         </p>
       </div>
+
+      <BillingResultBanner status={billing} />
+
+      <SubscriptionCard user={user} />
 
       {brandCount === 0 ? (
         <Card className="border-dashed">
