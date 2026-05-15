@@ -75,6 +75,7 @@ export interface Config {
     templates: Template;
     'content-jobs': ContentJob;
     accounts: Account;
+    subscriptions: Subscription;
     'payload-kv': PayloadKv;
     'payload-locked-documents': PayloadLockedDocument;
     'payload-preferences': PayloadPreference;
@@ -90,6 +91,7 @@ export interface Config {
     templates: TemplatesSelect<false> | TemplatesSelect<true>;
     'content-jobs': ContentJobsSelect<false> | ContentJobsSelect<true>;
     accounts: AccountsSelect<false> | AccountsSelect<true>;
+    subscriptions: SubscriptionsSelect<false> | SubscriptionsSelect<true>;
     'payload-kv': PayloadKvSelect<false> | PayloadKvSelect<true>;
     'payload-locked-documents': PayloadLockedDocumentsSelect<false> | PayloadLockedDocumentsSelect<true>;
     'payload-preferences': PayloadPreferencesSelect<false> | PayloadPreferencesSelect<true>;
@@ -446,6 +448,33 @@ export interface Account {
   createdAt: string;
 }
 /**
+ * Stripe subscription mirror. One row per (owner, stripeSubscriptionId). Webhook handler keeps this in sync.
+ *
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "subscriptions".
+ */
+export interface Subscription {
+  id: number;
+  /**
+   * Stamped automatically from the authenticated user.
+   */
+  owner: number | User;
+  stripeCustomerId: string;
+  stripeSubscriptionId: string;
+  stripePriceId?: string | null;
+  status: 'active' | 'trialing' | 'past_due' | 'canceled' | 'incomplete' | 'incomplete_expired' | 'unpaid';
+  /**
+   * When the current paid period ends. After this, status drops to canceled / past_due unless renewed.
+   */
+  currentPeriodEnd?: string | null;
+  /**
+   * True when the customer asked to cancel — access continues until currentPeriodEnd, then drops.
+   */
+  cancelAtPeriodEnd?: boolean | null;
+  updatedAt: string;
+  createdAt: string;
+}
+/**
  * This interface was referenced by `Config`'s JSON-Schema
  * via the `definition` "payload-kv".
  */
@@ -500,6 +529,10 @@ export interface PayloadLockedDocument {
     | ({
         relationTo: 'accounts';
         value: number | Account;
+      } | null)
+    | ({
+        relationTo: 'subscriptions';
+        value: number | Subscription;
       } | null);
   globalSlug?: string | null;
   user: {
@@ -708,6 +741,21 @@ export interface AccountsSelect<T extends boolean = true> {
   accessToken?: T;
   tokenExpiresAt?: T;
   connectedAt?: T;
+  updatedAt?: T;
+  createdAt?: T;
+}
+/**
+ * This interface was referenced by `Config`'s JSON-Schema
+ * via the `definition` "subscriptions_select".
+ */
+export interface SubscriptionsSelect<T extends boolean = true> {
+  owner?: T;
+  stripeCustomerId?: T;
+  stripeSubscriptionId?: T;
+  stripePriceId?: T;
+  status?: T;
+  currentPeriodEnd?: T;
+  cancelAtPeriodEnd?: T;
   updatedAt?: T;
   createdAt?: T;
 }
