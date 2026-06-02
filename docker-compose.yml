@@ -1,3 +1,9 @@
+# A stable project name keeps the Compose project (and therefore image/container
+# names and the build cache) constant regardless of the working directory. This
+# is what lets atomic releases under releases/<ts>/ (see scripts/receive-release.sh)
+# reuse previously built smn-* images instead of rebuilding from scratch.
+name: smn
+
 include:
   - database/docker-compose.db.yml
   - database/docker-compose.queue.yml

@@ -24,7 +24,13 @@
 
 set -euo pipefail
 
-log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*"; }
+TOTAL_STEPS=5
+
+# log: timestamped line prefixed with "DEPLOY:".
+log() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] DEPLOY: $*"; }
+
+# step <n> <message>: log a step line as "[n/TOTAL_STEPS] message".
+step() { log "[$1/$TOTAL_STEPS] $2"; }
 
 SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${PROJECT_DIR:-$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)}"
@@ -35,24 +41,24 @@ log "Deploy SHA: $DEPLOY_SHA"
 
 cd "$PROJECT_DIR"
 
-log "[1/5] Rebuilding Docker images..."
+step 1 "Rebuilding Docker images..."
 ./scripts/prod.sh build web agents celery-worker flower
-log "[1/5] Done."
+step 1 "Done."
 
-log "[2/5] Starting services..."
+step 2 "Starting services..."
 ./scripts/prod.sh start web agents celery-worker flower
-log "[2/5] Done."
+step 2 "Done."
 
-log "[3/5] Backing up database..."
+step 3 "Backing up database..."
 BACKUP_KEEP_DAYS=30 ./scripts/prod.sh backup-db
-log "[3/5] Done."
+step 3 "Done."
 
-log "[4/5] Running database migrations..."
+step 4 "Running database migrations..."
 ./scripts/prod.sh migrate
-log "[4/5] Done."
+step 4 "Done."
 
-log "[5/5] Removing dangling Docker images..."
+step 5 "Removing dangling Docker images..."
 docker image prune -f
-log "[5/5] Done."
+step 5 "Done."
 
 log "Deploy complete (sha: $DEPLOY_SHA)."

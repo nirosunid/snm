@@ -8,7 +8,8 @@ ROOT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)"
 usage() {
   cat <<'EOF'
 Usage:
-  ./scripts/prod.sh build [service...]    # Build all or named services
+  ./scripts/prod.sh build [service...]      # Build all or named services (cached base images)
+  ./scripts/prod.sh build:pull [service...] # Build, refreshing base images (--pull)
   ./scripts/prod.sh up [service...]       # Build + start all or named services (-d)
   ./scripts/prod.sh start [service...]    # Start already-built services (-d)
   ./scripts/prod.sh restart [service...]  # Restart all or named services
@@ -37,7 +38,13 @@ cd "$ROOT_DIR"
 
 case "$COMMAND" in
   build)
-    DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml -f docker-compose.prod.yml build --pull "$@"
+    # NOTE: --pull intentionally omitted — base images don't change often and
+    # pulling them on every deploy adds 1-2 minutes of network IO per service.
+    # Run `./scripts/prod.sh build:pull` periodically (weekly?) to refresh them.
+    DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml -f docker-compose.prod.yml build --parallel "$@"
+    ;;
+  build:pull)
+    DOCKER_BUILDKIT=1 docker compose -f docker-compose.yml -f docker-compose.prod.yml build --pull --parallel "$@"
     ;;
   up)
     docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build "$@"
