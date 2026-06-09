@@ -21,6 +21,7 @@
     "@ai-sdk/anthropic": "^1.0.0",
     "@ai-sdk/google": "^1.0.0",
     "@ai-sdk/openai": "^1.0.0",
+    "@google/genai": "^1.0.0",
     "@payloadcms/db-postgres": "latest",
     "@payloadcms/next": "latest",
     "@payloadcms/richtext-lexical": "latest",

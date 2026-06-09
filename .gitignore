@@ -49,3 +49,5 @@ src/payload-types.ts
 # .claude/agents/, .claude/skills/) is committed and lives outside .claude/local/.
 CLAUDE.local.md
 .claude/local/
+
+shared/
