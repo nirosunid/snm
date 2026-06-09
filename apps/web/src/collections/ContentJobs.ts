@@ -82,8 +82,7 @@ export const ContentJobs: CollectionConfig = {
       relationTo: "users",
       required: true,
       hasMany: false,
-      defaultValue: ({ user }: { user?: { id?: number | string } | null }) =>
-        user?.id,
+      defaultValue: ({ user }: { user?: { id?: number | string } | null }) => user?.id,
       access: {
         create: adminOnlyFieldAccess,
         update: adminOnlyFieldAccess,
